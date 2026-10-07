@@ -1,0 +1,4 @@
+# Security scan baseline (keel-linux/.github, security-scan.yml): findings
+# that were read and are not a risk, one per line, the fingerprint and why.
+bandit:B608:overlay/usr/lib/inithooks/bin/odoo.py:af0df87aa5cd the only value formatted in is passlib's pbkdf2_sha512 hash, whose alphabet ([A-Za-z0-9./$]) cannot close the quote; the user's password never reaches the SQL
+shellcheck:SC1090:overlay/usr/lib/inithooks/firstboot.d/40odoo:c57db62f520d shell lint, not a security risk: a sourced file whose path is computed, shellcheck cannot follow it

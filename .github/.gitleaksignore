@@ -1,0 +1,10 @@
+# gitleaks false positives, by fingerprint. Each was read; none is a live secret.
+# ODOO_KEY_SHA256, ODOO_KEY_FINGERPRINT, repository_key_fingerprint: the SHA-256 and the
+# fingerprint of Odoo's public APT signing key, pinned to verify it; public by design.
+6b6c43f72fa63cc4ed74075f27635936a57871d4:tests/odoo-update-fixture.sh:generic-api-key:11
+6cc53c172ae752c471be0b83f56865acc608f535:conf.d/main:generic-api-key:10
+6cc53c172ae752c471be0b83f56865acc608f535:conf.d/main:generic-api-key:9
+# openerp-server*.conf (2015, removed): a commented-out db_password in a temporary
+# template of the upstream appliance; the inithooks set the database password at first boot.
+6837d8c2c543de7e4283064e48675b16388325a3:overlay/opt/openerp/odoo_tmp/openerp-server-man.conf:generic-api-key:44
+6837d8c2c543de7e4283064e48675b16388325a3:overlay/opt/openerp/odoo_tmp/openerp-server.conf:generic-api-key:44
