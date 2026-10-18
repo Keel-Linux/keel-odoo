@@ -48,6 +48,12 @@ Known limits
 
 - There is no ``wkhtmltopdf``, so PDF reports do not render yet
   (decision 0022 plans a pinned package in the Keel archive).
+- In the cloud modes the Core Rule Set of Coraza reads every request. The
+  layer ends rule 930130 for the Odoo routes, because the model
+  ``res.config.settings`` looks like a restricted file to it. A JSON request
+  of more than 128 KiB is refused (the default limit of Coraza for a body
+  with no file). The web client uploads files as ``multipart/form-data``,
+  and that is not under this limit.
 - Odoo has no Adminer and no OCA addons. Put addons in
   ``/opt/odoo/extra-addons``.
 - The websocket (``/websocket``) works in the simple mode. In the cloud

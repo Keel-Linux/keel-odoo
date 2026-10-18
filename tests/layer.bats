@@ -16,6 +16,7 @@ ROUTE=$OVERLAY/etc/nginx/keel-default.d/60-keel-odoo.conf
 MAP=$OVERLAY/etc/nginx/conf.d/keel-odoo.conf
 CONF=$OVERLAY/etc/odoo/odoo.conf
 HOOK=$OVERLAY/usr/lib/inithooks/firstboot.d/45odoo
+CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 
 @test "manifest: odoo, version 1, an appliance on lnpp" {
     grep -qx "manifest_version: 1" "$MANIFEST"
@@ -121,6 +122,17 @@ HOOK=$OVERLAY/usr/lib/inithooks/firstboot.d/45odoo
 @test "odoo.conf: nothing writes into /opt" {
     grep -qx "data_dir = /var/lib/odoo" "$CONF"
     grep -qx "addons_path = /opt/odoo/18.0/addons,/opt/odoo/extra-addons" "$CONF"
+}
+
+@test "coraza: a CRS plugin that ends 930130 on the path of the Odoo routes only" {
+    grep -q 'id:10100,' "$CRS"
+    grep -q 'ctl:ruleRemoveTargetById=930130;REQUEST_FILENAME' "$CRS"
+    # the model is a plain name: no slash and no dot segment can reach the exclusion
+    grep -qF '^/web/dataset/(?:call_kw|call_button)/[a-z0-9_.]+/[a-z0-9_]+$' "$CRS"
+    # one rule, and it does not switch the rule off for arguments or headers
+    run grep -c '^SecRule' "$CRS"
+    [ "$output" = 1 ]
+    run ! grep -q 'ruleRemoveById=' "$CRS"
 }
 
 @test "hook: a thin wrapper that hands the spec's values to odoo.py" {

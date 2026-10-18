@@ -26,6 +26,11 @@ keel-odoo-19.0 (1) keel; urgency=low
   * Odoo runs on the node whose PostgreSQL accepts writes. The timer
     keel-odoo-follow.timer starts it on a primary and stops it on a
     standby.
+  * A CRS plugin (/etc/coreruleset/plugins/keel-odoo-before.conf) ends rule
+    930130 for the path of the Odoo routes. The Core Rule Set found
+    ".settings/" in /web/dataset/call_kw/res.config.settings/get_views and
+    blocked the Settings app with 403 in the cloud modes. The exclusion
+    covers that rule, for REQUEST_FILENAME, for these routes only.
   * The first boot hook 45odoo sets the admin password and the master
     password from secrets.app_password, freezes web.base.url from
     app.domain, and renews database.secret and database.uuid. It fails
