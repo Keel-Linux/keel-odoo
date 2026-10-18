@@ -23,7 +23,7 @@ import subprocess
 import sys
 
 CONF = "/etc/odoo/odoo.conf"
-# The file that tells keel-odoo-follow.timer that the first boot hook has
+# The file that tells serve.py that the first boot hook has
 # finished: until it exists, Odoo does not start, so a failed hook never
 # leaves Odoo running with the password of the image.
 READY = "/var/lib/keel-odoo/ready"

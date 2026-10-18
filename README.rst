@@ -38,27 +38,44 @@ files. A database that an operator creates later needs the same system
 parameter. Sessions are files in ``/var/lib/odoo/sessions``: users log in
 again after a failover.
 
-Odoo runs on the node whose PostgreSQL accepts writes. The timer
-``keel-odoo-follow.timer`` runs ``/usr/lib/keel-odoo/follow.py`` every 3
-seconds. It starts Odoo on a primary and stops it on a standby. After a
-failover, Odoo starts on the new primary some seconds after the VIP moves.
+Odoo is loaded on every node and serves on the node whose PostgreSQL
+accepts writes. ``odoo.service`` runs ``/usr/lib/keel-odoo/serve.py``. It
+imports Odoo, then asks PostgreSQL every 0.2 seconds one read only question:
+is the server out of recovery and open for writes? A standby answers it, and
+a standby is never writable. On the writable node, and after the first boot
+hook has finished, it starts Odoo at once, with the imports done. On a node
+that is not writable it stops Odoo, and a fenced or old primary is in
+recovery, so it does not serve. Odoo cannot start in a database that is in
+recovery, so a warm Odoo on a standby is not possible. While it waits, the
+process holds no listener and writes nothing. After a failover, Odoo
+answers a few seconds after PostgreSQL accepts writes.
+
+Reports
+-------
+
+``wkhtmltopdf`` 0.12.6.1-3, the upstream build with patched qt, is in
+``/usr/local/bin``. The build installs it at a pinned digest, because
+Debian 13 has no package for it. Only that build prints the header and the
+footer of a report. ``report.url`` is ``http://127.0.0.1:8069``, so the
+printer reads the style sheets from Odoo on the loopback.
 
 Known limits
 ------------
 
-- There is no ``wkhtmltopdf``, so PDF reports do not render yet
-  (decision 0022 plans a pinned package in the Keel archive).
+- ``wkhtmltopdf`` is a pinned file from the upstream packaging project, not
+  a package of the Keel archive (decision 0022 plans one). An update is a
+  new layer.
 - In the cloud modes the Core Rule Set of Coraza reads every request. The
   layer ends rule 930130 for the Odoo routes, because the model
-  ``res.config.settings`` looks like a restricted file to it. A JSON request
-  of more than 128 KiB is refused (the default limit of Coraza for a body
-  with no file). The web client uploads files as ``multipart/form-data``,
-  and that is not under this limit.
+  ``res.config.settings`` looks like a restricted file to it. A JSON-RPC
+  call may be 16 MiB, and the base64 fields of a file (``datas``, ``raw``,
+  ``image_1920`` and the like) are not read by the rules. Any other JSON
+  body of more than 256 KiB is refused. The web client uploads files as
+  ``multipart/form-data``, and that is not under this limit.
 - Odoo has no Adminer and no OCA addons. Put addons in
   ``/opt/odoo/extra-addons``.
-- The websocket (``/websocket``) works in the simple mode. In the cloud
-  modes Anubis sits in front, and the snippet of ``keel-overlay-anubis``
-  does not pass the ``Upgrade`` header yet.
+- The websocket (``/websocket``) needs keel-overlay-anubis 0.1.1 in the
+  cloud modes: its snippet passes the ``Upgrade`` header.
 
 Credentials *(set at the first boot)*
 -------------------------------------

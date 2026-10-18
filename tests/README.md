@@ -12,13 +12,14 @@ spec.
   It has the steps of the boot test of keel-lnpp (database password,
   Webmin, the check page at `/keel-check/`, `keel diff`) and the Odoo
   steps: `/web/login` answers with its form, the admin user logs in with
-  `secrets.app_password`, and a script bundle of the web client comes back
-  with content (the bundles are attachments, stored in the database). The
+  `secrets.app_password`, a script bundle of the web client comes back
+  with content, the websocket answers 101, and a report prints as PDF with
+  its header and footer (`lib/odoo-pdf.py`) (the bundles are attachments, stored in the database). The
   image build per merge (decision 0061) runs it.
 - `layer.bats`: the files of the overlay, with grep.
 - `image-check.bats`: `conf.d/zz-check` against a scratch tree named by
   `KEEL_CONF_ROOT`: a good tree, then each defect alone.
-- `python/`: the first boot hook and the follow script under pytest.
+- `python/`: the first boot hook and `serve.py` under pytest.
 - `stack.bats`: Nginx with keel-web's real sites and two stub servers on
   the ports of Odoo, as root, only where `KEEL_ODOO_STACK_TEST=1` and
   `KEEL_WEB_SRC` names a checkout of keel-web.

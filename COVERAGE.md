@@ -9,9 +9,9 @@ LXC as the acceptance test of a recipe).
 | File | Test | Coverage | Note |
 | --- | --- | --- | --- |
 | overlay/usr/lib/inithooks/bin/odoo.py | tests/python/test_odoo_hook.py | 100 percent of lines and branches, coverage.py | the first boot hook; a fake passlib and a fake psql |
-| overlay/usr/lib/keel-odoo/follow.py | tests/python/test_follow.py | 100 percent of lines and branches, coverage.py | Odoo follows the writable PostgreSQL |
+| overlay/usr/lib/keel-odoo/serve.py | tests/python/test_serve.py | 100 percent of lines and branches, coverage.py | Odoo serves on the writable node only; the process start and the signals are integration only |
 | conf.d/zz-check | tests/image-check.bats | 100 percent, kcov | every defect alone, and all reported |
-| tests/lib/boot-test-lib.sh | tests/boot-test.bats | 100 percent, kcov | with the verdicts of the Odoo login |
+| tests/lib/boot-test-lib.sh | tests/boot-test.bats | 100 percent, kcov | with the verdicts of the Odoo login, the websocket and the PDF |
 | The files of the overlay | tests/layer.bats | grep | the manifest, the units, the preset, the route, odoo.conf |
 | Nginx with keel-web's sites | tests/stack.bats | integration | the job `stack`: nginx -t, the routes, the websocket headers, https behind Anubis |
 | conf.d/main | the build | integration only | build time script |

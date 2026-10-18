@@ -7,8 +7,13 @@
 # - Odoo is there, from /opt/odoo/18.0, with the revision recorded.
 # - Odoo runs as its own system user with no shell. The user has no password
 #   in the image or in the configuration: PostgreSQL authenticates it by peer.
-# - keel-odoo-follow.timer is enabled and odoo.service is not: the timer
-#   starts Odoo on the node whose PostgreSQL is writable.
+# - odoo.service is enabled and runs usr/lib/keel-odoo/serve.py, which loads
+#   Odoo on every node and serves on the node whose PostgreSQL is writable.
+#   No second supervisor (the old follow timer) is left.
+# - wkhtmltopdf is the build with patched qt: reports print with headers and
+#   footers.
+# - The front site takes uploads and the Coraza rules take the JSON-RPC
+#   calls of Odoo.
 # - The Nginx route is in keel-web's include directory.
 # - odoo.yaml is the one appliance manifest that no other is built on.
 #
@@ -54,13 +59,31 @@ if grep -qE '^admin_passwd\s*=\s*\S' "$root/etc/odoo/odoo.conf" 2>/dev/null; the
     fatal "odoo.conf holds a master password in the image"
 fi
 
-if [ ! -L "$root$WANTS/timers.target.wants/keel-odoo-follow.timer" ]; then
-    fatal "keel-odoo-follow.timer is not enabled: nothing starts Odoo"
+if [ ! -L "$root$WANTS/multi-user.target.wants/odoo.service" ]; then
+    fatal "odoo.service is not enabled: nothing loads Odoo"
 fi
-if [ -e "$root$WANTS/multi-user.target.wants/odoo.service" ] \
-        || [ -L "$root$WANTS/multi-user.target.wants/odoo.service" ]; then
-    fatal "odoo.service is enabled on its own: the timer starts it on the writable node"
+if [ ! -f "$root/usr/lib/keel-odoo/serve.py" ]; then
+    fatal "/usr/lib/keel-odoo/serve.py is not in the image"
 fi
+if [ -L "$root$WANTS/timers.target.wants/keel-odoo-follow.timer" ]; then
+    fatal "keel-odoo-follow.timer is enabled: a second supervisor of Odoo"
+fi
+
+WKHTMLTOPDF=/usr/local/bin/wkhtmltopdf
+if [ ! -x "$root$WKHTMLTOPDF" ]; then
+    fatal "wkhtmltopdf is not in the image: reports do not print as PDF"
+elif ! "$root$WKHTMLTOPDF" --version 2>/dev/null | grep -q 'with patched qt'; then
+    fatal "wkhtmltopdf is not the build with patched qt: a report has no header and no footer"
+fi
+
+if [ ! -f "$root/etc/nginx/keel-front.d/60-keel-odoo.conf" ]; then
+    fatal "the body limit of the front site is not in keel-front.d: an upload stops at 1 MB behind Anubis"
+fi
+for rules in before after; do
+    if [ ! -f "$root/etc/coreruleset/plugins/keel-odoo-$rules.conf" ]; then
+        fatal "keel-odoo-$rules.conf is not in the image"
+    fi
+done
 
 if [ ! -f "$root/etc/nginx/keel-default.d/60-keel-odoo.conf" ]; then
     fatal "the Nginx route of Odoo is not in keel-web's include directory"

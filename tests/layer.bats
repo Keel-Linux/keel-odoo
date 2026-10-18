@@ -9,8 +9,9 @@ bats_require_minimum_version 1.5.0
 OVERLAY=overlay
 MANIFEST=$OVERLAY/usr/share/keel/appliances/odoo.yaml
 ODOO_UNIT=$OVERLAY/usr/lib/systemd/system/odoo.service
-FOLLOW_UNIT=$OVERLAY/usr/lib/systemd/system/keel-odoo-follow.service
-TIMER=$OVERLAY/usr/lib/systemd/system/keel-odoo-follow.timer
+SERVE=$OVERLAY/usr/lib/keel-odoo/serve.py
+FRONT=$OVERLAY/etc/nginx/keel-front.d/60-keel-odoo.conf
+CRS_AFTER=$OVERLAY/etc/coreruleset/plugins/keel-odoo-after.conf
 PRESET=$OVERLAY/usr/lib/systemd/system-preset/20-keel-odoo.preset
 ROUTE=$OVERLAY/etc/nginx/keel-default.d/60-keel-odoo.conf
 MAP=$OVERLAY/etc/nginx/conf.d/keel-odoo.conf
@@ -25,7 +26,7 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     grep -qx "base: lnpp" "$MANIFEST"
 }
 
-@test "manifest: no process, because the follow script is the only supervisor of Odoo" {
+@test "manifest: no process, because serve.py is the only supervisor of Odoo" {
     run ! grep -q "^processes:" "$MANIFEST"
     run ! grep -q "^checks:" "$MANIFEST"
 }
@@ -43,12 +44,27 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     [ "$output" = odoo.yaml ]
 }
 
-@test "odoo.service: its own user, from /opt/odoo, no Install section" {
+@test "odoo.service: its own user, runs serve.py, enabled on every node" {
     grep -qx "User=odoo" "$ODOO_UNIT"
     grep -qx "Group=odoo" "$ODOO_UNIT"
-    grep -q "^ExecStart=/usr/bin/python3 /opt/odoo/18.0/odoo-bin --config /etc/odoo/odoo.conf$" "$ODOO_UNIT"
-    # Debian's presets enable every unit that has an Install section.
-    run ! grep -q "^\[Install\]" "$ODOO_UNIT"
+    grep -qx "ExecStart=/usr/bin/python3 /usr/lib/keel-odoo/serve.py" "$ODOO_UNIT"
+    grep -qx "WantedBy=multi-user.target" "$ODOO_UNIT"
+    grep -qx "enable odoo.service" "$PRESET"
+    run ! grep -q "keel-odoo-follow" "$PRESET"
+}
+
+@test "serve.py: the child runs odoo-bin of the pinned path and the config of the layer" {
+    grep -qx 'ODOO_BIN = "/opt/odoo/18.0/odoo-bin"' "$SERVE"
+    grep -qx 'CONF = "/etc/odoo/odoo.conf"' "$SERVE"
+    # the gate is read only, and a read only server is not writable
+    grep -q "pg_is_in_recovery()" "$SERVE"
+    grep -q "transaction_read_only" "$SERVE"
+}
+
+@test "the follow timer, its service and its script are gone" {
+    run ! ls "$OVERLAY/usr/lib/systemd/system/keel-odoo-follow.timer"
+    run ! ls "$OVERLAY/usr/lib/systemd/system/keel-odoo-follow.service"
+    run ! ls "$OVERLAY/usr/lib/keel-odoo/follow.py"
 }
 
 @test "odoo.service: no kernel tunables, no capabilities, only the address families it uses" {
@@ -69,23 +85,14 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     grep -qx "NoNewPrivileges=yes" "$ODOO_UNIT"
 }
 
-@test "odoo.service: a start that fails again and again is not rate limited, the timer decides" {
+@test "odoo.service: a start that fails again and again is not rate limited, serve.py decides" {
     grep -qx "StartLimitIntervalSec=0" "$ODOO_UNIT"
-    grep -qx "Restart=no" "$ODOO_UNIT"
+    grep -qx "Restart=on-failure" "$ODOO_UNIT"
 }
 
-@test "follow service and timer: a oneshot as root, every 3 seconds, enabled by the timer" {
-    grep -qx "Type=oneshot" "$FOLLOW_UNIT"
-    grep -qx "ExecStart=/usr/bin/python3 /usr/lib/keel-odoo/follow.py" "$FOLLOW_UNIT"
-    grep -qx "LogLevelMax=notice" "$FOLLOW_UNIT"
-    grep -qx "OnUnitActiveSec=3s" "$TIMER"
-    grep -qx "OnBootSec=10s" "$TIMER"
-    grep -qx "WantedBy=timers.target" "$TIMER"
-}
-
-@test "preset: the timer is on and Odoo is off" {
-    grep -qx "enable keel-odoo-follow.timer" "$PRESET"
-    grep -qx "disable odoo.service" "$PRESET"
+@test "odoo.service: a stop reaches serve.py first, and it stops Odoo" {
+    grep -qx "KillMode=mixed" "$ODOO_UNIT"
+    grep -qx "TimeoutStopSec=60" "$ODOO_UNIT"
 }
 
 @test "route: the catch-all is a regular expression, because location / and location ^~ / clash with keel-web's" {
@@ -137,10 +144,62 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 @test "coraza: a CRS plugin that ends 930130 on the path of the Odoo routes only" {
     grep -q 'id:10100,' "$CRS"
     grep -q 'ctl:ruleRemoveTargetById=930130;REQUEST_FILENAME' "$CRS"
-    # one rule, and it does not switch a whole rule off
+    # two rules (10100 and 10102), and none switches a whole rule off
     run grep -c '^SecRule' "$CRS"
-    [ "$output" = 1 ]
+    [ "$output" = 2 ]
     run ! grep -q 'ruleRemoveById=' "$CRS"
+}
+
+# keel-overlay-coraza 0.1.4 refuses a JSON body of more than 256 KiB
+# (Keel-Linux/common#61). Odoo sends an attachment as base64 inside a
+# JSON-RPC call.
+@test "coraza: a JSON-RPC call to Odoo may be 16 MiB, and no more, and only a POST or PUT of JSON" {
+    grep -q 'id:10102,' "$CRS"
+    grep -q 'ctl:requestBodyLimit=16777216' "$CRS"
+    run bash -c "grep -vE '^\s*#' '$CRS' | grep -E 'requestBodyAccess|requestBodyLimit=[0-9]{9,}'"
+    [ "$status" -ne 0 ]
+    [ "$(grep -c 'requestBodyLimit' <(grep -vE '^\s*#' "$CRS"))" = 1 ]
+    grep -q '"@rx \^(?:POST|PUT)\$"' "$CRS"
+    grep -q '"@rx \^application/json"' "$CRS"
+}
+
+@test "coraza: the rule of the limit matches the JSON-RPC routes and nothing else" {
+    rx=$(sed -n 's/^    SecRule REQUEST_FILENAME "@rx \(.*\)" "chain"$/\1/p' "$CRS")
+    [ -n "$rx" ]
+    check() { python3 -c 'import re, sys; sys.exit(0 if re.search(sys.argv[1], sys.argv[2]) else 1)' "$rx" "$1"; }
+    check /web/dataset/call_kw/ir.attachment/create
+    check /web/dataset/call_button/res.partner/action_archive
+    check /jsonrpc
+    run ! check /web/binary/upload_attachment
+    run ! check /other/jsonrpc
+    run ! check /jsonrpc/x
+}
+
+@test "coraza: the base64 fields of a JSON-RPC call are not read by the Core Rule Set, and only they" {
+    # one static update of the rules that carry the tag of the Core Rule Set
+    run grep -c '^SecRuleUpdateTargetByTag' "$CRS_AFTER"
+    [ "$output" = 1 ]
+    grep -q '^SecRuleUpdateTargetByTag "OWASP_CRS" "!ARGS:/' "$CRS_AFTER"
+    rx=$(sed -n 's|^SecRuleUpdateTargetByTag "OWASP_CRS" "!ARGS:/\(.*\)/"$|\1|p' "$CRS_AFTER")
+    [ -n "$rx" ]
+    check() { python3 -c 'import re, sys; sys.exit(0 if re.search(sys.argv[1], sys.argv[2]) else 1)' "$rx" "$1"; }
+    check json.params.args.0.datas
+    check json.params.args.0.image_1920
+    check json.params.args.0.0.db_datas
+    check json.params.kwargs.values.raw
+    run ! check json.params.args.0.name
+    run ! check json.params.args.0.comment
+    run ! check json.params.model
+    run ! check json.name
+    run ! check args.0.datas
+    run ! check json.params.args.0.datas_fname_x
+}
+
+@test "front: the front site takes an upload as the route does, in keel-front.d" {
+    grep -qx 'client_max_body_size 256m;' "$FRONT"
+    grep -q 'keel-web 0.3.2' "$FRONT"
+    grep -q 'keel-overlay-coraza 0.1.4' "$FRONT"
+    grep -q 'client_max_body_size 256m;' "$ROUTE"
 }
 
 @test "coraza: the exclusion matches the Odoo routes and no path that is a file" {
@@ -180,4 +239,24 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 
 @test "no Apache anywhere in the layer" {
     run ! grep -rIl "apache2\|a2enmod\|a2ensite" "$OVERLAY" conf.d/main plan Makefile
+}
+
+@test "build: wkhtmltopdf is the pinned upstream build with patched qt, checked by digest" {
+    grep -q '^WKHTMLTOX_URL=https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/' conf.d/main
+    grep -qE '^echo "[0-9a-f]{64}  \$WKHTMLTOX_DEB" \| sha256sum --check --status$' conf.d/main
+    grep -q "wkhtmltopdf --version | grep -q 'with patched qt'" conf.d/main
+    # the libraries of its Depends line come from Debian, through the plan
+    for lib in xfonts-75dpi xfonts-base libjpeg62-turbo libssl3t64 fontconfig libxrender1; do
+        grep -qx "$lib" plan/main
+    done
+}
+
+@test "build: a report fetches its style sheets from the loopback, not from the public address" {
+    grep -q "'report.url', 'http://127.0.0.1:8069'" conf.d/main
+}
+
+@test "build: Odoo is enabled on every node, and the front site must include keel-front.d" {
+    grep -qx 'systemctl enable odoo.service' conf.d/main
+    run ! grep -q 'keel-odoo-follow' conf.d/main
+    grep -q 'keel-front.d/\*.conf' conf.d/main
 }

@@ -10,11 +10,19 @@ setup() {
     CHECK="$BATS_TEST_DIRNAME/../conf.d/zz-check"
     T="$BATS_TEST_TMPDIR/root"
     export KEEL_CONF_ROOT="$T"
-    mkdir -p "$T/etc/systemd/system/timers.target.wants" "$T/etc/odoo" \
+    mkdir -p "$T/etc/systemd/system/multi-user.target.wants" "$T/etc/odoo" \
         "$T/etc/nginx/keel-default.d" "$T/usr/share/keel/appliances" \
-        "$T/opt/odoo/18.0"
-    ln -s /usr/lib/systemd/system/keel-odoo-follow.timer \
-        "$T/etc/systemd/system/timers.target.wants/keel-odoo-follow.timer"
+        "$T/opt/odoo/18.0" \
+        "$T/usr/local/bin" "$T/usr/lib/keel-odoo" "$T/etc/nginx/keel-front.d" \
+        "$T/etc/coreruleset/plugins"
+    : > "$T/etc/nginx/keel-front.d/60-keel-odoo.conf"
+    : > "$T/etc/coreruleset/plugins/keel-odoo-before.conf"
+    : > "$T/etc/coreruleset/plugins/keel-odoo-after.conf"
+    ln -s /usr/lib/systemd/system/odoo.service \
+        "$T/etc/systemd/system/multi-user.target.wants/odoo.service"
+    : > "$T/usr/lib/keel-odoo/serve.py"
+    printf '#!/bin/sh\necho "wkhtmltopdf 0.12.6.1 (with patched qt)"\n' > "$T/usr/local/bin/wkhtmltopdf"
+    chmod +x "$T/usr/local/bin/wkhtmltopdf"
     : > "$T/opt/odoo/18.0/odoo-bin" && chmod +x "$T/opt/odoo/18.0/odoo-bin"
     echo "odoo 18.0" > "$T/opt/odoo/REVISION"
     cp "$BATS_TEST_DIRNAME/../overlay/etc/odoo/odoo.conf" "$T/etc/odoo/"
@@ -93,20 +101,55 @@ setup() {
     [[ "$output" == *"holds a master password"* ]]
 }
 
-@test "the timer not enabled fails the build" {
-    rm "$T/etc/systemd/system/timers.target.wants/keel-odoo-follow.timer"
+@test "odoo.service not enabled fails the build: nothing would load Odoo" {
+    rm "$T/etc/systemd/system/multi-user.target.wants/odoo.service"
     run "$CHECK"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"keel-odoo-follow.timer is not enabled"* ]]
+    [[ "$output" == *"odoo.service is not enabled"* ]]
 }
 
-@test "odoo.service enabled on its own fails the build" {
-    mkdir -p "$T/etc/systemd/system/multi-user.target.wants"
-    ln -s /usr/lib/systemd/system/odoo.service \
-        "$T/etc/systemd/system/multi-user.target.wants/odoo.service"
+@test "the serve script missing fails the build" {
+    rm "$T/usr/lib/keel-odoo/serve.py"
     run "$CHECK"
     [ "$status" -eq 1 ]
-    [[ "$output" == *"odoo.service is enabled on its own"* ]]
+    [[ "$output" == *"serve.py is not in the image"* ]]
+}
+
+@test "a follow timer left in the image fails the build: two supervisors of Odoo" {
+    mkdir -p "$T/etc/systemd/system/timers.target.wants"
+    ln -s /usr/lib/systemd/system/keel-odoo-follow.timer \
+        "$T/etc/systemd/system/timers.target.wants/keel-odoo-follow.timer"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"keel-odoo-follow.timer is enabled"* ]]
+}
+
+@test "no wkhtmltopdf fails the build" {
+    rm "$T/usr/local/bin/wkhtmltopdf"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"wkhtmltopdf is not in the image"* ]]
+}
+
+@test "a wkhtmltopdf without patched qt fails the build: headers and footers do not print" {
+    printf '#!/bin/sh\necho "wkhtmltopdf 0.12.6"\n' > "$T/usr/local/bin/wkhtmltopdf"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"wkhtmltopdf is not the build with patched qt"* ]]
+}
+
+@test "no body limit for the front site fails the build: an upload would stop at 1 MB behind Anubis" {
+    rm "$T/etc/nginx/keel-front.d/60-keel-odoo.conf"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"the body limit of the front site"* ]]
+}
+
+@test "a missing rule file fails the build" {
+    rm "$T/etc/coreruleset/plugins/keel-odoo-after.conf"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"keel-odoo-after.conf is not in the image"* ]]
 }
 
 @test "no route in the include directory fails the build" {
