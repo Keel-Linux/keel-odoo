@@ -1,3 +1,14 @@
+keel-odoo-19.0 (7) keel; urgency=low
+
+  * serve.py asks the login page of Odoo four times after it starts Odoo,
+    so each HTTP worker has its routing map before the first user comes.
+    The first request of a worker took 0.6 s to 0.8 s for it. Measured at
+    the VIP on a real pair, a login and a write answered 5.5 s after the VIP
+    landed; PostgreSQL takes 2.1 s to accept writes, Odoo is ready 0.3 s
+    later, and the first login and write need the rest.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sun, 18 Oct 2026 21:00:00 +0000
+
 keel-odoo-19.0 (6) keel; urgency=low
 
   * The boot test reads the footer of the printed report when its words are
