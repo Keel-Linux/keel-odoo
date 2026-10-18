@@ -197,11 +197,12 @@ bt_odoo_assets_verdict "${asset_code-}" "${asset_size-}"
 # The bus of Odoo: the gevent worker starts a little after the web worker,
 # so an upgrade request to /websocket can need some seconds. Behind Anubis
 # the snippet of keel-overlay-anubis 0.1.1 passes the upgrade; this gate
-# boots the simple mode, where Nginx passes it.
+# boots the simple mode, where Nginx passes it. Odoo refuses a handshake
+# whose Origin is not the Host (a browser sends one), so the request has one.
 websocket_code=""
 websocket_answers() {
     websocket_code=$(curl -6 -k -s -o /dev/null --max-time 3 -w '%{http_code}' \
-        -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+        -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H "Origin: https://[$addr]" \
         -H 'Sec-WebSocket-Version: 13' -H "Sec-WebSocket-Key: $(head -c 16 /dev/urandom | base64)" \
         "https://[$addr]/websocket" || true)
     [ "$websocket_code" = 101 ]
