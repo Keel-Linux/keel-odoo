@@ -195,6 +195,16 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     run ! check json.params.args.0.datas_fname_x
 }
 
+# Attachments are in the database and a commit waits for the synchronous
+# standby (0054). Over a link of 250 ms and 1.5 % loss an upload of 10 MiB
+# needs minutes, and the front waited 60 s for Anubis (504 after 63 s).
+@test "front: the front waits as long as the route does for a slow upload" {
+    grep -qx 'proxy_read_timeout 720s;' "$FRONT"
+    grep -qx 'proxy_send_timeout 720s;' "$FRONT"
+    grep -q 'proxy_read_timeout 720s;' "$ROUTE"
+    grep -q 'proxy_send_timeout 720s;' "$ROUTE"
+}
+
 @test "front: the front site takes an upload as the route does, in keel-front.d" {
     grep -qx 'client_max_body_size 256m;' "$FRONT"
     grep -q 'keel-web 0.3.2' "$FRONT"

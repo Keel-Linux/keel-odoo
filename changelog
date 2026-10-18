@@ -1,3 +1,14 @@
+keel-odoo-19.0 (8) keel; urgency=low
+
+  * The front site waits 720 s for Anubis (proxy_read_timeout and
+    proxy_send_timeout in keel-front.d/60-keel-odoo.conf), as the route
+    waits for Odoo. Over a link of 250 ms and 1.5 % loss the commit of an
+    attachment waits for the synchronous standby and runs at about 50 KB/s,
+    and the front answered 504 after 63 s to an upload of 4 MiB. 19.0 (7)
+    is a testing build.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sun, 18 Oct 2026 23:30:00 +0000
+
 keel-odoo-19.0 (7) keel; urgency=low
 
   * serve.py asks the login page of Odoo four times after it starts Odoo,
