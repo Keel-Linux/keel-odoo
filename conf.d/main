@@ -91,7 +91,8 @@ echo "env['ir.attachment'].force_storage(); env.cr.commit()" \
 psql_odoo <<'SQL'
 UPDATE res_users SET password = NULL WHERE login = 'admin';
 SQL
-[ "$(psql_odoo -c "SELECT count(*) FROM res_users WHERE password IS NOT NULL")" = 0 ]
+# The public user is inactive and holds a random hash that nobody knows.
+[ "$(psql_odoo -c "SELECT count(*) FROM res_users WHERE active AND password IS NOT NULL")" = 0 ]
 # The files that the installation left are orphans now.
 rm -rf /var/lib/odoo/filestore /var/lib/odoo/sessions
 
