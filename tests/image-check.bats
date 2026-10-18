@@ -16,6 +16,9 @@ setup() {
         "$T/usr/local/bin" "$T/usr/lib/keel-odoo" "$T/etc/nginx/keel-front.d" \
         "$T/etc/coreruleset/plugins"
     : > "$T/etc/nginx/keel-front.d/60-keel-odoo.conf"
+    mkdir -p "$T/etc/nginx/snippets"
+    printf 'proxy_set_header Upgrade $http_upgrade;\nproxy_set_header Connection $keel_anubis_connection;\nproxy_pass http://[::1]:8923;\n' \
+        > "$T/etc/nginx/snippets/keel-anubis.conf"
     : > "$T/etc/coreruleset/plugins/keel-odoo-before.conf"
     : > "$T/etc/coreruleset/plugins/keel-odoo-after.conf"
     ln -s /usr/lib/systemd/system/odoo.service \
@@ -143,6 +146,13 @@ setup() {
     run "$CHECK"
     [ "$status" -eq 1 ]
     [[ "$output" == *"the body limit of the front site"* ]]
+}
+
+@test "an Anubis snippet that does not pass the Upgrade header fails the build: the bus of Odoo would not work" {
+    printf 'proxy_pass http://[::1]:8923;\n' > "$T/etc/nginx/snippets/keel-anubis.conf"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"does not pass the Upgrade header"* ]]
 }
 
 @test "a missing rule file fails the build" {

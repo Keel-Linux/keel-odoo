@@ -1,3 +1,15 @@
+keel-odoo-19.0 (4) keel; urgency=low
+
+  * serve.py imports the code of the installed modules while it waits (a
+    read of the database, which a standby allows). A start of Odoo after a
+    promotion then needs 0.7 s from the fork to the login page, in place
+    of 2.5 s. 19.0 (3) is a testing build.
+  * The image check fails the build if the Anubis snippet does not pass the
+    Upgrade header (keel-overlay-anubis 0.1.1): the bus of Odoo needs it
+    behind Anubis.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sun, 18 Oct 2026 18:00:00 +0000
+
 keel-odoo-19.0 (3) keel; urgency=low
 
   * Odoo answers within a few seconds of a failover. odoo.service runs

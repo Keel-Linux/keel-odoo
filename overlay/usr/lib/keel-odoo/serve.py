@@ -7,8 +7,11 @@ jobs: Odoo does not even start in a database that is in recovery. So this
 process, which is odoo.service, does the slow part of the start on every
 node and the last part on one node only:
 
-- it imports Odoo, which is most of the time of a start, and then it waits.
-  It holds no listener and it writes to no database while it waits;
+- it imports Odoo, and the Python code of every installed module (a read
+  of the database, which a standby allows). That is most of the time of a
+  start: a start with the modules imported needs 0.7 s, and one without
+  them 2.5 s. Then it waits. It holds no listener and it writes to no
+  database while it waits;
 - every POLL_SECONDS it asks PostgreSQL one read only question: is the
   server out of recovery, and is it open for writes? A standby can answer;
 - when the answer is yes, and the first boot hook has finished (the file
@@ -37,6 +40,7 @@ RESTART_DELAY = 1.0
 STOP_WAIT_STEPS = 600
 STOP_WAIT_SECONDS = 0.1
 QUESTION = "SELECT pg_is_in_recovery(), current_setting('transaction_read_only')"
+MODULES = "SELECT name FROM ir_module_module WHERE state = 'installed' ORDER BY name"
 
 
 def is_writable(in_recovery, read_only):
@@ -109,14 +113,35 @@ class Poller:
         return is_writable(*row)
 
 
+def installed_modules(conn):
+    """The names of the installed modules: a select, which a standby allows."""
+    cursor = conn.cursor()
+    cursor.execute(MODULES)
+    names = [row[0] for row in cursor.fetchall()]
+    cursor.close()
+    return names
+
+
+def import_modules(names, load):
+    """Import the code of each module. One that does not import is said and
+    left to Odoo, which imports it again at the start and fails there."""
+    for name in names:
+        try:
+            load(name)
+        except Exception as error:  # the start of Odoo reports it again
+            print("<4>keel-odoo: the module %s did not import: %s" % (name, error), file=sys.stderr, flush=True)
+
+
 class Supervisor:
-    def __init__(self, poller, is_ready, start_child, stop_child, child_alive, clock):
+    def __init__(self, poller, is_ready, start_child, stop_child, child_alive, clock, warm=None):
         self.poller = poller
         self.is_ready = is_ready
         self.start_child = start_child
         self.stop_child = stop_child
         self.child_alive = child_alive
         self.clock = clock
+        self.warm = warm
+        self.warmed = False
         self.child = None
         self.not_before = 0.0
 
@@ -125,7 +150,13 @@ class Supervisor:
             print("<4>keel-odoo: the server ended", file=sys.stderr, flush=True)
             self.child = None
             self.not_before = self.clock() + RESTART_DELAY
-        action = decide(self.is_ready(), self.poller.writable(), self.child is not None)
+        writable = self.poller.writable()
+        if not self.warmed and writable is not None:
+            # once, when the server first answers
+            self.warmed = True
+            if self.warm is not None:
+                self.warm()
+        action = decide(self.is_ready(), writable, self.child is not None)
         if action == "start" and self.clock() >= self.not_before:
             # no connection may be open at the fork
             self.poller.close()
@@ -176,6 +207,22 @@ def preload():  # pragma: no cover
     import odoo.service.server  # noqa: F401
 
 
+def warm_modules():  # pragma: no cover
+    """Import the code of the installed modules, as the start of Odoo does
+    for its registry (odoo.modules.module.load_openerp_module is a no-op for
+    a module that is imported already). It parses the configuration and sets
+    the addons path first, as odoo.cli.main does."""
+    import odoo
+    odoo.tools.config.parse_config(["--config", CONF])
+    odoo.modules.module.initialize_sys_path()
+    conn = connect()
+    try:
+        names = installed_modules(conn)
+    finally:
+        conn.close()
+    import_modules(names, odoo.modules.module.load_openerp_module)
+
+
 def run_odoo():  # pragma: no cover
     """The child: Odoo as odoo-bin runs it. The multi process server starts
     the gevent worker with sys.argv[0], so that is odoo-bin."""
@@ -204,7 +251,8 @@ def main():  # pragma: no cover
     stopping = []
     signal.signal(signal.SIGTERM, lambda *_: stopping.append(True))
     signal.signal(signal.SIGINT, lambda *_: stopping.append(True))
-    supervisor = Supervisor(Poller(connect), is_ready, fork_odoo, stop_child, child_alive, time.monotonic)
+    supervisor = Supervisor(Poller(connect), is_ready, fork_odoo, stop_child, child_alive, time.monotonic,
+                            warm_modules)
     print("<5>keel-odoo: loaded, waiting for a writable PostgreSQL", flush=True)
     while not stopping:
         supervisor.tick()
