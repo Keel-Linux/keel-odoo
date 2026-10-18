@@ -443,7 +443,7 @@ bt_check_page_verdict() {
 
 bt_odoo_page_verdict() {
     # bt_odoo_page_verdict CODE BODY: /web/login over HTTPS. Nginx proxies
-    # to Odoo on the loopback, and the follow script starts Odoo when the
+    # to Odoo on the loopback, and serve.py starts Odoo when the
     # first boot ends and PostgreSQL accepts writes. 502 means Nginx is up
     # and Odoo is not.
     local code=${1-} body=${2-}
@@ -501,4 +501,36 @@ bt_odoo_assets_verdict() {
     fi
     echo "boot-test: the web client script answered '$code' with '$size' bytes" >&2
     return 1
+}
+
+bt_odoo_websocket_verdict() {
+    # bt_odoo_websocket_verdict CODE: an upgrade request to /websocket. The
+    # gevent worker answers 101 when the bus is up.
+    local code=${1-}
+    if [ "$code" = 101 ]; then
+        echo "boot-test: the websocket upgrade answers 101"
+        return 0
+    fi
+    echo "boot-test: the websocket upgrade answered '$code', not 101" >&2
+    return 1
+}
+
+bt_odoo_pdf_verdict() {
+    # bt_odoo_pdf_verdict TEXT: the text of a report that Odoo printed with
+    # wkhtmltopdf (tests/lib/odoo-pdf.py). A build of wkhtmltopdf without
+    # patched qt prints the body and no header and no footer.
+    local text=${1-}
+    if [ -z "$text" ]; then
+        echo "boot-test: the report has no text: no PDF came back" >&2
+        return 1
+    fi
+    if [[ $text != *KEEL-BODY-TEXT* ]]; then
+        echo "boot-test: the report has no body text" >&2
+        return 1
+    fi
+    if ! grep -qE 'Page +1 +/ +1' <<< "$text"; then
+        echo "boot-test: the report has no page number: the footer did not print" >&2
+        return 1
+    fi
+    echo "boot-test: the report printed as PDF with its header and footer"
 }

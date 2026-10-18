@@ -163,7 +163,7 @@ bt_wait_for "$BT_TIMEOUT" "$BT_INTERVAL" "the check page on https://[$addr]/keel
 bt_check_page_verdict "$page" "$(lxc attach -- hostname)"
 
 # Odoo (decision 0059, step 6). Nginx proxies /web/login to Odoo on the
-# loopback. keel-odoo-follow.timer starts Odoo when the first boot has ended
+# loopback. serve.py starts Odoo when the first boot has ended
 # and PostgreSQL accepts writes, so the page can need some seconds. Then the
 # admin user logs in with the password the description declared (no value is
 # read out of the container), and a script bundle of the web client comes
@@ -193,6 +193,28 @@ asset_path=$(bt_odoo_assets_url "$odoo_page") \
 read -r asset_code asset_size < <(curl -6 -k -s -b "$cookies" -o /dev/null \
     -w '%{http_code} %{size_download}\n' "https://[$addr]$asset_path" || true)
 bt_odoo_assets_verdict "${asset_code-}" "${asset_size-}"
+
+# The bus of Odoo: the gevent worker starts a little after the web worker,
+# so an upgrade request to /websocket can need some seconds. Behind Anubis
+# the snippet of keel-overlay-anubis 0.1.1 passes the upgrade; this gate
+# boots the simple mode, where Nginx passes it.
+websocket_code=""
+websocket_answers() {
+    websocket_code=$(curl -6 -k -s -o /dev/null --max-time 3 -w '%{http_code}' \
+        -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+        -H 'Sec-WebSocket-Version: 13' -H "Sec-WebSocket-Key: $(head -c 16 /dev/urandom | base64)" \
+        "https://[$addr]/websocket" || true)
+    [ "$websocket_code" = 101 ]
+}
+bt_wait_for "$BT_TIMEOUT" "$BT_INTERVAL" "the websocket on https://[$addr]/websocket" \
+    websocket_answers || true
+bt_odoo_websocket_verdict "$websocket_code"
+
+# A report prints as PDF with its header and footer: wkhtmltopdf is the
+# build with patched qt. The script runs in the container and logs in with
+# the password of the spec from the file, not from the arguments.
+pdf_text=$(lxc attach -- python3 - < "$here/lib/odoo-pdf.py" || true)
+bt_odoo_pdf_verdict "$pdf_text"
 
 # 9. No drift between the declared description and the booted root.
 set +e

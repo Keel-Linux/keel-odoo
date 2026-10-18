@@ -1,4 +1,4 @@
-"""The first boot hook and the follow script are files of the overlay, not
+"""The first boot hook and the serve script are files of the overlay, not
 packages. Each file is
 loaded under a name that does not hide the odoo package."""
 import importlib.machinery
@@ -9,7 +9,7 @@ import pytest
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 HOOK = os.path.join(ROOT, "overlay", "usr", "lib", "inithooks", "bin", "odoo.py")
-FOLLOW = os.path.join(ROOT, "overlay", "usr", "lib", "keel-odoo", "follow.py")
+SERVE = os.path.join(ROOT, "overlay", "usr", "lib", "keel-odoo", "serve.py")
 
 
 def _load(name, path):
@@ -26,5 +26,5 @@ def hook():
 
 
 @pytest.fixture(scope="session")
-def follow():
-    return _load("keel_odoo_follow", FOLLOW)
+def serve():
+    return _load("keel_odoo_serve", SERVE)

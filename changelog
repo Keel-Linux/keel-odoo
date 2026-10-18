@@ -1,3 +1,29 @@
+keel-odoo-19.0 (3) keel; urgency=low
+
+  * Odoo answers within a few seconds of a failover. odoo.service runs
+    on every node as /usr/lib/keel-odoo/serve.py: it imports Odoo once, asks
+    PostgreSQL every 0.2 s one read only question (out of recovery and open
+    for writes), and starts Odoo at once on the writable node. Before, the
+    unit started on the writable node only, from a timer of 3 s, and the
+    start took 5 s to 10 s: Odoo answered a write 8.7 s to 17 s after the
+    VIP landed. A standby never serves: Odoo cannot start in a database in
+    recovery, and the script stops Odoo when the node is not writable. The
+    follow timer, its service and follow.py are gone.
+  * wkhtmltopdf 0.12.6.1-3, the upstream build with patched qt, is in the
+    image at a pinned digest. Debian 13 has no package for it. Reports
+    print as PDF with their header and footer. report.url is the loopback.
+    The image check and the boot test print a report and read its footer.
+  * An upload works behind Anubis and Coraza. keel-front.d/60-keel-odoo.conf
+    sets the limit of the front site to 256 MB (it was 1 MB). keel-odoo-
+    before.conf sets the limit of a JSON-RPC call to 16 MiB, after
+    keel-overlay-coraza 0.1.4 limited it to 256 KiB (common#61), and
+    keel-odoo-after.conf takes the base64 fields of a file out of the rules
+    of the Core Rule Set (a file of 1 MB took 21 s and got 403). Needs
+    keel-web 0.3.2.
+  * The boot test checks the websocket (101).
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sun, 18 Oct 2026 17:00:00 +0000
+
 keel-odoo-19.0 (2) keel; urgency=low
 
   * The build asserts that no active user of the Odoo database has a

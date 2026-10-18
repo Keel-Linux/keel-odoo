@@ -52,5 +52,23 @@ fonts-font-awesome
 fonts-roboto-unhinted
 libjs-underscore
 
-/* the build fetches the Odoo snapshot with git */
+/* wkhtmltopdf (the upstream build with patched qt, installed by conf.d/main)
+   needs these; xfonts-75dpi and xfonts-base are the fonts of a report */
+ca-certificates
+fontconfig
+libfreetype6
+libjpeg62-turbo
+libpng16-16t64
+libssl3t64
+libstdc++6
+libx11-6
+libxcb1
+libxext6
+libxrender1
+xfonts-75dpi
+xfonts-base
+zlib1g
+
+/* the build fetches the Odoo snapshot and wkhtmltopdf */
+curl
 git

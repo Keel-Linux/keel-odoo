@@ -544,3 +544,37 @@ LOGIN_OK=$'HTTP/1.1 303 SEE OTHER\r\nLocation: /odoo\r\nSet-Cookie: session_id=a
     run bt_odoo_assets_url "<html></html>"
     [ "$status" -eq 1 ]
 }
+
+@test "odoo_websocket_verdict: the bus answers 101, and nothing else passes" {
+    run bt_odoo_websocket_verdict 101
+    [ "$status" -eq 0 ]
+    [[ $output == *"the websocket upgrade answers 101"* ]]
+    run bt_odoo_websocket_verdict 400
+    [ "$status" -eq 1 ]
+    [[ $output == *"answered '400'"* ]]
+    run bt_odoo_websocket_verdict ""
+    [ "$status" -eq 1 ]
+}
+
+PDF_TEXT=$'Keel PDF test\nMy Company\nMarker KEEL-BODY-TEXT\nMy Company\n Page 1  / 1'
+
+@test "odoo_pdf_verdict: the body, the header and the page number are in the PDF" {
+    run bt_odoo_pdf_verdict "$PDF_TEXT"
+    [ "$status" -eq 0 ]
+    [[ $output == *"the report printed as PDF with its header and footer"* ]]
+}
+
+@test "odoo_pdf_verdict: a PDF without the footer fails" {
+    run bt_odoo_pdf_verdict $'Keel PDF test\nMarker KEEL-BODY-TEXT'
+    [ "$status" -eq 1 ]
+    [[ $output == *"no page number"* ]]
+}
+
+@test "odoo_pdf_verdict: a PDF without the body, or no text at all, fails" {
+    run bt_odoo_pdf_verdict $'My Company\n Page 1  / 1'
+    [ "$status" -eq 1 ]
+    [[ $output == *"no body text"* ]]
+    run bt_odoo_pdf_verdict ""
+    [ "$status" -eq 1 ]
+    [[ $output == *"no text"* ]]
+}

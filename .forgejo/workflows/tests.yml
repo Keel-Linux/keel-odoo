@@ -4,7 +4,7 @@
 # the runner of the caller.
 #   tests:     the shell this layer writes under bats and kcov
 #              (tests/coverage.sh), with the threshold committed here
-#   python:    the first boot hook and the follow script (overlay/usr/lib)
+#   python:    the first boot hook and the serve script (overlay/usr/lib)
 #              under pytest and coverage, lines and branches
 #   stack:     keel-web's real sites, the include directory and the route of
 #              this layer, on a booted trixie container with two stub
@@ -31,7 +31,7 @@ jobs:
     with:
       threshold: 100
   python:
-    # The hook odoo.py and the script follow.py: 100 percent of lines and
+    # The hook odoo.py and the script serve.py: 100 percent of lines and
     # branches, measured on 2026-10-18. passlib is not needed: the tests give
     # the hook a fake.
     runs-on: keel-host

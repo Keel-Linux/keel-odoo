@@ -12,6 +12,11 @@
 #    boot is short. Attachments go to the database (ir_attachment.location),
 #    so the pair of decision 0054 carries them: a failover loses no file.
 #    The first boot hook renews the secrets that every image shares.
+# 4. wkhtmltopdf prints the reports. Debian 13 has no such package, and
+#    Odoo needs the build with patched qt: only that one prints the header
+#    and the footer of a report. The build installs the .deb of the
+#    upstream packaging project at a pinned digest (decision 0022 plans a
+#    package of the Keel archive for it). It lands in /usr/local.
 
 ODOO_URL=https://git.pop.coop/Keel-Linux/odoo.git
 ODOO_TAG=snapshot-18.0-1f2b50ade7a1
@@ -19,6 +24,7 @@ ODOO_COMMIT=aec78b6bc4c266c787f9b747c1666fd41b680973
 ODOO_UPSTREAM=1f2b50ade7a11e11cbcd792b5b6df439525c54d0
 ODOO_DIR=/opt/odoo/18.0
 CONF=/etc/odoo/odoo.conf
+WKHTMLTOX_URL=https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.bookworm_amd64.deb
 
 mkdir -p /opt/odoo/extra-addons
 git clone --quiet --depth 1 --branch "$ODOO_TAG" "$ODOO_URL" "$ODOO_DIR"
@@ -29,6 +35,17 @@ odoo 18.0
 snapshot $ODOO_COMMIT ($ODOO_URL, tag $ODOO_TAG)
 upstream $ODOO_UPSTREAM (https://github.com/odoo/odoo, branch 18.0)
 REV
+
+WKHTMLTOX_DEB=/tmp/wkhtmltox.deb
+curl --fail --silent --show-error --location --retry 3 --output "$WKHTMLTOX_DEB" "$WKHTMLTOX_URL"
+# the digest of wkhtmltox_0.12.6.1-3.bookworm_amd64.deb, 16986150 bytes
+echo "98ba0d157b50d36f23bd0dedf4c0aa28c7b0c50fcdcdc54aa5b6bbba81a3941d  $WKHTMLTOX_DEB" | sha256sum --check --status
+# The libraries that it needs are in the plan. Its Depends line names libssl3,
+# which libssl3t64 provides in Debian 13.
+dpkg -i "$WKHTMLTOX_DEB"
+rm -f "$WKHTMLTOX_DEB"
+wkhtmltopdf --version | grep -q 'with patched qt'
+echo "wkhtmltox 0.12.6.1-3 ($WKHTMLTOX_URL)" >> /opt/odoo/REVISION
 # The upstream tree holds private keys as test fixtures and for the test
 # environments of some localizations (point_of_sale, account_peppol,
 # l10n_it_edi, odoo/addons/base/tests/ssl), and python3-ldap holds one in
@@ -87,18 +104,35 @@ echo "env['ir.attachment'].force_storage(); env.cr.commit()" \
 # The installation gave the admin user the password "admin", the same in
 # every image. A NULL password cannot log in. The first boot hook sets the
 # password of the spec, and Odoo does not start before the hook has
-# finished (usr/lib/keel-odoo/follow.py).
+# finished (usr/lib/keel-odoo/serve.py).
 psql_odoo <<'SQL'
 UPDATE res_users SET password = NULL WHERE login = 'admin';
 SQL
 # The public user is inactive and holds a random hash that nobody knows.
 [ "$(psql_odoo -c "SELECT count(*) FROM res_users WHERE active AND password IS NOT NULL")" = 0 ]
+# wkhtmltopdf fetches the style sheets and the images of a report from
+# report.url. Without it, it uses web.base.url, which is the public address:
+# it goes through Anubis and Coraza, or does not resolve, and the report
+# prints with no style and no header.
+psql_odoo <<'SQL'
+INSERT INTO ir_config_parameter (key, value, create_uid, write_uid, create_date, write_date)
+VALUES ('report.url', 'http://127.0.0.1:8069', 1, 1, now(), now())
+ON CONFLICT (key) DO UPDATE SET value = 'http://127.0.0.1:8069';
+SQL
 # The files that the installation left are orphans now.
 rm -rf /var/lib/odoo/filestore /var/lib/odoo/sessions
 
 pg_ctlcluster "$PGVER" main stop
 trap - EXIT
 
-# The timer starts Odoo on the node whose PostgreSQL is writable. The unit
-# has no Install section, and the preset names it as disabled.
-systemctl enable keel-odoo-follow.timer
+# Odoo runs on every node: usr/lib/keel-odoo/serve.py loads it and serves on
+# the node whose PostgreSQL is writable. It does not serve before the first
+# boot hook has written /var/lib/keel-odoo/ready.
+systemctl enable odoo.service
+
+# The front site of Keel Web must include keel-front.d, so an upload is not
+# stopped at 1 MB behind Anubis.
+FRONT=/etc/nginx/keel-front.d/60-keel-odoo.conf
+[ -f "$FRONT" ]
+grep -qxF '	include /etc/nginx/keel-front.d/*.conf;' /etc/nginx/sites-available/default-anubis \
+    || { echo "the front site of keel-web does not include keel-front.d: keel-web 0.3.2 is the least" >&2; exit 1; }
