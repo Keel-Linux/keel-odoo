@@ -1,83 +1,71 @@
-Odoo - From ERP to CRM, eCommerce to CMS
-========================================
+Keel Odoo
+=========
 
-`Odoo`_ is an all-in-one business management suite of mobile-friendly web
-apps that integrates everything you need to grow your business: CRM,
-website content management, project management, human resources,
-accounting, invoicing and more. Odoo apps integrate seamlessly to
-provide a full-featured open source ERP, but can also be used
-stand-alone. Python programmers can develop their own app modules, or
-choose from an array of free open source such as those provided by OCA_;
-or paid commercial ones.
+`Odoo`_ 18.0 Community behind Nginx on the LNPP stack of Keel Linux
+(handbook decision 0059, step 6). The layer is built on ``lnpp``:
 
-This appliance includes all the standard features in `TurnKey Core`_:
+    bt-layer odoo --parent lnpp
 
-- Odoo configurations for TurnKey v18.x:
+The chain is Core, Web, LNPP and Odoo. Apache is gone. TurnKey's Odoo
+appliance ran Odoo 16 behind Apache on LAPP. This layer replaces it.
 
-    - Odoo v16 installed from debian backports apt repo (v18.x).
-    - Includes modules from base install of Odoo.
+What the layer adds to LNPP
+---------------------------
 
-- **Security note**: As of 18.0, due to using the debian backports repo
-  Updates to Odoo **ARE NOT** configured to install automatically.
+- Odoo 18.0, a checkout of the ``Keel-Linux/odoo`` snapshot in
+  ``/opt/odoo/18.0``, at a pinned commit. The Python libraries come from
+  Debian 13 only. Nothing is installed with pip.
+- A route in the include directory of Keel Web
+  (``/etc/nginx/keel-default.d/60-keel-odoo.conf``). Nginx sends HTTP to
+  ``127.0.0.1:8069`` and ``/websocket`` to ``127.0.0.1:8072``. Odoo runs
+  with ``proxy_mode`` on. The check page ``/keel-check/`` of LNPP stays.
+- A database role ``odoo`` with no password. Odoo connects on the unix
+  socket and PostgreSQL authenticates the operating system user.
+- The first boot hook ``45odoo``. It sets the password of the ``admin``
+  user and the master password from ``secrets.app_password``, freezes
+  ``web.base.url`` from ``app.domain``, and renews ``database.secret`` and
+  ``database.uuid``. A first boot with no console and no password stops
+  with a message.
 
-- SSL support out of the box.
-- `Adminer`_ administration frontend for PostgreSQL (listening on
-  port 12322 - uses SSL).
-- Webmin modules for configuring Apache2, PostgreSQL and Postfix.
+Files and the pair
+------------------
 
-**To create a new Odoo Databse (i.e. site)**
+Attachments are stored in the database (``ir_attachment.location`` is
+``db``), so the PostgreSQL pair of decision 0054 carries them. A failover
+loses no file. This is the choice of least power: it adds no mechanism
+beside the pair. The cost is a larger database and slower access to large
+files. A database that an operator creates later needs the same system
+parameter. Sessions are files in ``/var/lib/odoo/sessions``: users log in
+again after a failover.
 
-To create a new Odoo DB, the Odoo config file needs to be edited and the
-Odoo service restarted.
+Odoo runs on the node whose PostgreSQL accepts writes. The timer
+``keel-odoo-follow.timer`` runs ``/usr/lib/keel-odoo/follow.py`` every 3
+seconds. It starts Odoo on a primary and stops it on a standby. After a
+failover, Odoo starts on the new primary some seconds after the VIP moves.
 
-Overview of process:
-1. Edit /etc/odoo/odoo
-   - change value of "db_name" from "TurnkeylinuxExample" to your desired DB
-     name
-2. Restart odoo.service
-3. Reload Odoo login screen in your browser and you should be good to go
+Known limits
+------------
 
-Webmin steps:
-1.
-    - Browse to 'Tools' >> 'FileManager'
-    - Navigate to '/etc/odoo' and edit the 'odoo.conf' file
-    - Edit as per step 1 above
-    - Save changes
-2.
-    - Navigate to 'System' >> 'Bootup and Shutdown'
-    - Find the "odoo.service" in the list and select it via the checkbox
-    - Scroll to the bottom and select 'Restart'
-3.
-    - As per step 3 above
+- There is no ``wkhtmltopdf``, so PDF reports do not render yet
+  (decision 0022 plans a pinned package in the Keel archive).
+- In the cloud modes the Core Rule Set of Coraza reads every request. The
+  layer ends rule 930130 for the Odoo routes, because the model
+  ``res.config.settings`` looks like a restricted file to it. A JSON request
+  of more than 128 KiB is refused (the default limit of Coraza for a body
+  with no file). The web client uploads files as ``multipart/form-data``,
+  and that is not under this limit.
+- Odoo has no Adminer and no OCA addons. Put addons in
+  ``/opt/odoo/extra-addons``.
+- The websocket (``/websocket``) works in the simple mode. In the cloud
+  modes Anubis sits in front, and the snippet of ``keel-overlay-anubis``
+  does not pass the ``Upgrade`` header yet.
 
-CLI steps:
-1.
-    - Edit /etc/odoo/odoo as per step 1
-2.
-    - Restart odoo.service::
+Credentials *(set at the first boot)*
+-------------------------------------
 
-        systemctl restart odoo
-3.
-    - As per step 3 above
-
-**Notice for special Odoo Localization**
-
-In case you run a L10n Odoo Localization you will need other PIP Packages
-and Libs installed on your system, please check your localization support on
-OCA_.
-
-Credentials *(passwords set at first boot)*
--------------------------------------------
-
-**Note**: the Odoo password set at firstboot applies to both the Odoo
-admin account (example app) AND the masterpassword  - however these can be
-changed individually after firstboot.
-
--  Webmin, SSH: username **root**
--  PostgreSQL, Adminer: username **postgres**
--  Odoo Master Account: **admin**
+- Webmin, SSH: user **root**.
+- PostgreSQL: user **postgres**, password ``secrets.db_password``.
+- Odoo: user **admin**. The password is ``secrets.app_password``, and it is
+  also the master password.
 
 .. _Odoo: https://www.odoo.com/
-.. _TurnKey Core: https://www.turnkeylinux.org/core
-.. _Adminer: https://www.adminer.org/
-.. _OCA: https://github.com/OCA

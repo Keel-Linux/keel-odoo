@@ -1,0 +1,11 @@
+manifest_version: 1
+kind: appliance
+name: odoo
+title: Keel Odoo
+summary: Odoo 18.0 behind Nginx on the LNPP stack, alone or as a replicated pair (0059)
+base: lnpp
+# No overlay and no process of its own. The overlays and the PostgreSQL
+# process are those of Core, Web and LNPP. Odoo runs on the node whose
+# PostgreSQL is writable, and usr/lib/keel-odoo/follow.py starts and stops
+# it, so a manifest process would make Monit start Odoo on a standby. Odoo
+# listens on the loopback, so the firewall has nothing to add.

@@ -1,0 +1,33 @@
+# Odoo 18.0 (handbook decision 0059). keel-odoo-follow.timer starts and
+# stops this unit with the role of PostgreSQL (usr/lib/keel-odoo/follow.py):
+# a standby refuses the writes that Odoo makes. So the unit has no Install
+# section, and the preset names it as disabled.
+[Unit]
+Description=Odoo (Keel)
+After=postgresql.service
+# The follow script decides, so a start that fails does not count against a limit.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=odoo
+Group=odoo
+ExecStart=/usr/bin/python3 /opt/odoo/18.0/odoo-bin --config /etc/odoo/odoo.conf
+Restart=no
+KillMode=mixed
+TimeoutStopSec=60
+StandardOutput=journal
+StandardError=journal
+ProtectSystem=strict
+ReadWritePaths=/var/lib/odoo
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=

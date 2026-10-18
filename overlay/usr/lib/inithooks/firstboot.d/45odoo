@@ -1,0 +1,20 @@
+#!/bin/bash -e
+# Set the Odoo admin password, the master password and the base URL from the
+# spec (secrets.app_password and app.domain), and renew the secrets that the
+# image shares. Runs after 35pgsqlpass and 36pgsqlverify of the lnpp layer,
+# so PostgreSQL answers. Odoo is not running: follow.py starts it only after
+# odoo.py has written /var/lib/keel-odoo/ready, at its end.
+
+# shellcheck source=/dev/null
+. /etc/default/inithooks
+
+# shellcheck source=/dev/null
+[ -e "$INITHOOKS_CONF" ] && . "$INITHOOKS_CONF"
+
+# The password goes in the environment, not in the arguments: the process
+# list shows the arguments.
+export APP_PASS
+"$INITHOOKS_PATH/bin/odoo.py" --domain="$APP_DOMAIN"
+
+# A later run of the hook changes the secrets that a running Odoo has read.
+systemctl try-restart odoo.service

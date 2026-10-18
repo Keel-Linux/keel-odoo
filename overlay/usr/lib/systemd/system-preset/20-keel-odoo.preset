@@ -1,0 +1,5 @@
+# keel-odoo: systemd applies the presets on the first boot, and Debian's
+# presets enable every unit that they do not name. Odoo must run on the node
+# whose PostgreSQL accepts writes only, so keel-odoo-follow.timer starts it.
+enable keel-odoo-follow.timer
+disable odoo.service

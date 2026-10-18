@@ -1,3 +1,51 @@
+keel-odoo-19.0 (1) keel; urgency=low
+
+  * Odoo moves from Apache to Nginx and onto the LNPP stack (handbook
+    decision 0059, step 6). The layer is built on lnpp (bt-layer odoo
+    --parent lnpp): Nginx, Coraza and Anubis from Keel Web, PostgreSQL 17
+    and Python 3.13 from LNPP. The image has no Apache, no Adminer and no
+    lapp.mk.
+  * Odoo 18.0 is a checkout of the Keel-Linux/odoo snapshot at a pinned
+    commit, in /opt/odoo/18.0, with the Python libraries of Debian 13
+    (decision 0022). Odoo 16 from bookworm-backports is gone. The
+    snapshot is one commit of the upstream branch 18.0 (1f2b50ade7a1). It
+    has no wkhtmltopdf, so PDF reports are not available yet. The build
+    removes the private keys that the upstream tree and python3-ldap hold
+    as test fixtures: no machine built from a shared layer may hold a key
+    that every other machine holds.
+  * Nginx proxies to Odoo on the loopback: HTTP on 8069 and /websocket on
+    8072, with proxy_mode on. The route is a file in keel-web's include
+    directory, next to the check page /keel-check/ of the lnpp layer.
+  * Odoo connects to PostgreSQL on the unix socket and PostgreSQL
+    authenticates the operating system user odoo by peer: there is no
+    database password in the image or on the disk.
+  * Attachments are stored in the database (ir_attachment.location = db),
+    so the PostgreSQL pair of decision 0054 carries them and a failover
+    loses no file. Sessions are files: users log in again after a
+    failover.
+  * Odoo runs on the node whose PostgreSQL accepts writes. The timer
+    keel-odoo-follow.timer starts it on a primary and stops it on a
+    standby.
+  * A CRS plugin (/etc/coreruleset/plugins/keel-odoo-before.conf) ends rule
+    930130 for the path of the Odoo routes. The Core Rule Set found
+    ".settings/" in /web/dataset/call_kw/res.config.settings/get_views and
+    blocked the Settings app with 403 in the cloud modes. The exclusion
+    covers that rule, for REQUEST_FILENAME, for these routes only.
+  * The first boot hook 45odoo sets the admin password and the master
+    password from secrets.app_password, freezes web.base.url from
+    app.domain, and renews database.secret and database.uuid once. It takes
+    the password from the environment, makes the hash with hashlib, and
+    fails with a message when a headless first boot gives no password. The
+    old hook imported crypt, which Python 3.13 removed.
+  * The image has no known password. The admin user has a NULL password
+    after the build, and Odoo does not start before the hook has written
+    /var/lib/keel-odoo/ready, so a failed first boot hook leaves Odoo off.
+    The database role odoo cannot create databases.
+  * odoo.service runs with no capability, no kernel tunable, no namespace
+    and only the address families that Odoo uses.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sun, 18 Oct 2026 04:30:00 +0000
+
 turnkey-odoo-18.0 (1) turnkey; urgency=low
 
   * Install Odoo v16.x from Debian backports (bookworm-backports) apt
