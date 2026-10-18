@@ -86,7 +86,10 @@ teardown_file() {
 
 @test "the simple site and this route pass nginx -t together" {
     run nginx -t
-    [ "$status" -eq 0 ]
+    if [ "$status" -ne 0 ]; then
+        echo "$output" >&3
+        return 1
+    fi
 }
 
 @test "a request for a page of Odoo reaches port 8069 with its path and host" {
@@ -143,7 +146,10 @@ host_ip() {
     rm /etc/nginx/sites-enabled/keel-default
     ln -s /etc/nginx/sites-available/default-anubis /etc/nginx/sites-enabled/default-anubis
     run nginx -t
-    [ "$status" -eq 0 ]
+    if [ "$status" -ne 0 ]; then
+        echo "$output" >&3
+        return 1
+    fi
     systemctl reload nginx
     run curl -s --unix-socket /run/nginx/keel-app.sock http://odoo.test/web/login
     [[ $output == "port=8069 path=/web/login host=odoo.test proto=https "* ]]
