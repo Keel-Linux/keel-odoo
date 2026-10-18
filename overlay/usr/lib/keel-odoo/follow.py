@@ -42,10 +42,13 @@ def firstboot_running(path=INITHOOKS_DEFAULT):
 
 def pg_writable():
     """True on a primary, False on a standby, None if the server is silent."""
-    argv = ["runuser", "-u", "odoo", "--", "psql", "-X", "-At", "-d", "odoo",
-            "-c", "SELECT pg_is_in_recovery()"]
+    argv = ["psql", "-X", "-At", "-d", "odoo", "-c", "SELECT pg_is_in_recovery()"]
+    # user= changes the user of the child with no PAM session, so the journal
+    # gets no "session opened" lines every few seconds. PostgreSQL
+    # authenticates the user odoo by peer on the unix socket.
     try:
-        result = subprocess.run(argv, capture_output=True, text=True, timeout=PSQL_TIMEOUT)
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=PSQL_TIMEOUT,
+                                user="odoo", group="odoo")
     except subprocess.TimeoutExpired:
         return None
     answer = result.stdout.strip()
@@ -65,7 +68,8 @@ def main():
     argv = ["systemctl", action, SERVICE]
     if action == "start":
         argv.insert(2, "--no-block")
-    print("keel-odoo-follow: %s %s" % (action, SERVICE))
+    # <5> is the syslog level "notice", which LogLevelMax=notice of the unit keeps
+    print("<5>keel-odoo-follow: %s %s" % (action, SERVICE))
     return 0 if subprocess.run(argv).returncode == 0 else 1
 
 

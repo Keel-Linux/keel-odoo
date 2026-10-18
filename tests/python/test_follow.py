@@ -35,13 +35,18 @@ def test_firstboot_is_not_running_without_the_file(follow, tmp_path):
 def _run(returncode, out="", err=""):
     def fake(argv, **kwargs):
         fake.argv = argv
+        fake.kwargs = kwargs
         return subprocess.CompletedProcess(argv, returncode, stdout=out, stderr=err)
     return fake
 
 
 def test_writable_reads_pg_is_in_recovery(follow, monkeypatch):
-    monkeypatch.setattr(follow.subprocess, "run", _run(0, "f\n"))
+    fake = _run(0, "f\n")
+    monkeypatch.setattr(follow.subprocess, "run", fake)
     assert follow.pg_writable() is True
+    # the child runs as odoo with no PAM session, and the server sees a peer
+    assert fake.kwargs["user"] == "odoo" and fake.kwargs["group"] == "odoo"
+    assert fake.argv[0] == "psql"
     monkeypatch.setattr(follow.subprocess, "run", _run(0, "t\n"))
     assert follow.pg_writable() is False
 

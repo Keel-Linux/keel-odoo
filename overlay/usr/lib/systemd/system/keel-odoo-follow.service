@@ -4,4 +4,6 @@ After=postgresql.service
 
 [Service]
 Type=oneshot
+# The timer fires every 3 seconds. Only a problem belongs in the journal.
+LogLevelMax=notice
 ExecStart=/usr/bin/python3 /usr/lib/keel-odoo/follow.py

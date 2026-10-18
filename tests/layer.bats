@@ -66,6 +66,7 @@ HOOK=$OVERLAY/usr/lib/inithooks/firstboot.d/45odoo
 @test "follow service and timer: a oneshot as root, every 3 seconds, enabled by the timer" {
     grep -qx "Type=oneshot" "$FOLLOW_UNIT"
     grep -qx "ExecStart=/usr/bin/python3 /usr/lib/keel-odoo/follow.py" "$FOLLOW_UNIT"
+    grep -qx "LogLevelMax=notice" "$FOLLOW_UNIT"
     grep -qx "OnUnitActiveSec=3s" "$TIMER"
     grep -qx "OnBootSec=10s" "$TIMER"
     grep -qx "WantedBy=timers.target" "$TIMER"
