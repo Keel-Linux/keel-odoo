@@ -29,6 +29,18 @@ odoo 18.0
 snapshot $ODOO_COMMIT ($ODOO_URL, tag $ODOO_TAG)
 upstream $ODOO_UPSTREAM (https://github.com/odoo/odoo, branch 18.0)
 REV
+# The upstream tree holds private keys as test fixtures and for the test
+# environments of some localizations (point_of_sale, account_peppol,
+# l10n_it_edi, odoo/addons/base/tests/ssl), and python3-ldap holds one in
+# slapdtest. A layer is shared, so no machine built from it may hold a
+# private key that every other machine holds too (bt-layer refuses it).
+# Nothing at run time reads them.
+grep -rIl -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$ODOO_DIR" /usr/lib/python3/dist-packages \
+    | xargs -r rm -f
+if grep -rIq -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$ODOO_DIR" /usr/lib/python3/dist-packages; then
+    echo "a private key is still in the tree" >&2
+    exit 1
+fi
 # Bytecode that depends on the source's content and not on its time, so the
 # unit can run with a read only /opt and the layer's bytes do not depend on
 # the time of the build.

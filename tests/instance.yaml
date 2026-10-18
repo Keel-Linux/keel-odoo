@@ -1,0 +1,58 @@
+# Instance description of the boot test (format: docs/spec.md of the keel
+# repository). IPv6 first, address from the bridge, no certificate request.
+# The secrets are files the test writes into the rootfs before booting,
+# which is the whole point of this test: secrets.db_password and
+# secrets.app_password are declared here, nothing is typed at the console,
+# and after the first boot a database client authenticates with exactly the
+# first value and the admin user of Odoo logs in with the second.
+#
+# This is the throwaway container the gate boots. The description an
+# operator would start from is keel/instance.example.yaml.
+version: 1
+
+instance:
+  hostname: odoo
+  fqdn: odoo.example.org
+
+network:
+  # The container's address comes from the bridge, so the host owns the
+  # interface configuration and 01ipconfig writes nothing.
+  managed_by: host
+  interfaces:
+    eth0:
+      ipv6:
+        method: auto
+
+tls:
+  acme:
+    enabled: false
+
+appliance:
+  name: odoo
+
+secrets:
+  root_password:
+    file: /etc/keel/secrets/root_password
+  # It renders to DB_PASS, which firstboot.d/35pgsqlpass reads and hands to
+  # bin/pgsqlconf.py: the password of the postgres role.
+  db_password:
+    file: /etc/keel/secrets/db_password
+  # It renders to APP_PASS, which firstboot.d/45odoo reads: the password of
+  # the Odoo admin user and the master password.
+  app_password:
+    file: /etc/keel/secrets/app_password
+
+app:
+  # It renders to APP_DOMAIN: firstboot.d/45odoo freezes web.base.url to it.
+  domain: odoo.example.org
+
+hub:
+  api_key: skip
+
+security:
+  alerts: skip
+  # A first boot input, not machine state: 95secupdates installs the
+  # pending security updates once. diff does not compare it.
+  updates_at_first_boot: skip
+
+first_login_wizard: false

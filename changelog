@@ -9,7 +9,10 @@ keel-odoo-19.0 (1) keel; urgency=low
     commit, in /opt/odoo/18.0, with the Python libraries of Debian 13
     (decision 0022). Odoo 16 from bookworm-backports is gone. The
     snapshot is one commit of the upstream branch 18.0 (1f2b50ade7a1). It
-    has no wkhtmltopdf, so PDF reports are not available yet.
+    has no wkhtmltopdf, so PDF reports are not available yet. The build
+    removes the private keys that the upstream tree and python3-ldap hold
+    as test fixtures: no machine built from a shared layer may hold a key
+    that every other machine holds.
   * Nginx proxies to Odoo on the loopback: HTTP on 8069 and /websocket on
     8072, with proxy_mode on. The route is a file in keel-web's include
     directory, next to the check page /keel-check/ of the lnpp layer.
