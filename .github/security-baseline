@@ -1,4 +1,4 @@
 # Security scan baseline (keel-linux/.github, security-scan.yml): findings
 # that were read and are not a risk, one per line, the fingerprint and why.
-bandit:B608:overlay/usr/lib/inithooks/bin/odoo.py:af0df87aa5cd the only value formatted in is passlib's pbkdf2_sha512 hash, whose alphabet ([A-Za-z0-9./$]) cannot close the quote; the user's password never reaches the SQL
-shellcheck:SC1090:overlay/usr/lib/inithooks/firstboot.d/40odoo:c57db62f520d shell lint, not a security risk: a sourced file whose path is computed, shellcheck cannot follow it
+bandit:B608:overlay/usr/lib/inithooks/bin/odoo.py:be9f1ba718ad the statement text takes only the pbkdf2 hash, which HASH_RE checks (its alphabet has no quote), and a URL that the code checks for quotes and backslashes; psql quotes both as literals (the \set command); the password itself never reaches the SQL
+bandit:B608:overlay/usr/lib/inithooks/bin/odoo.py:4cfb217f0c8d the statement text takes only the pbkdf2 hash that sql_script checked with HASH_RE a moment before (its alphabet has no quote); the password itself never reaches the SQL
