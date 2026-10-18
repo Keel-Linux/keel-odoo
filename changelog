@@ -1,3 +1,12 @@
+keel-odoo-19.0 (2) keel; urgency=low
+
+  * The build asserts that no active user of the Odoo database has a
+    password, and not that no user has one: the inactive public user holds
+    a random hash that nobody knows. The first build of 19.0 (1) stopped at
+    this assertion, so 19.0 (1) is not published.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sun, 18 Oct 2026 05:50:00 +0000
+
 keel-odoo-19.0 (1) keel; urgency=low
 
   * Odoo moves from Apache to Nginx and onto the LNPP stack (handbook
