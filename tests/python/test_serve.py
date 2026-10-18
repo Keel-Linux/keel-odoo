@@ -388,3 +388,107 @@ def test_import_modules_goes_on_after_a_module_that_does_not_import(serve, capsy
     serve.import_modules(["base", "bad", "web"], load)
     assert seen == ["base", "web"]
     assert "bad" in capsys.readouterr().err
+
+
+class HttpWorld(World):
+    """The world, with a warm request that answers as the script says."""
+
+    def __init__(self, serve):
+        super().__init__(serve)
+        self.answers = []
+        self.requests = 0
+
+    def supervisor(self):
+        sup = super().supervisor()
+        sup.warm_http = self.warm_http
+        return sup
+
+    def warm_http(self):
+        self.requests += 1
+        return self.answers.pop(0) if self.answers else True
+
+
+def test_the_first_requests_after_a_start_warm_the_workers(serve):
+    world = HttpWorld(serve)
+    world.writable = True
+    sup = world.supervisor()
+    sup.tick()
+    assert world.requests == 1
+    for _ in range(10):
+        sup.tick()
+    # WARM_REQUESTS answers in all, and no more
+    assert world.requests == serve.WARM_REQUESTS
+
+
+def test_a_warm_request_that_fails_does_not_count(serve):
+    world = HttpWorld(serve)
+    world.writable = True
+    world.answers = [False, False, True]
+    sup = world.supervisor()
+    for _ in range(3 + serve.WARM_REQUESTS):
+        sup.tick()
+    assert world.requests == 3 + serve.WARM_REQUESTS - 1
+
+
+def test_the_warm_requests_stop_after_the_time_limit(serve):
+    world = HttpWorld(serve)
+    world.writable = True
+    world.answers = [False] * 1000
+    sup = world.supervisor()
+    sup.tick()
+    world.now += serve.WARM_SECONDS + 1
+    before = world.requests
+    sup.tick()
+    sup.tick()
+    assert world.requests == before
+
+
+def test_no_warm_request_goes_to_a_node_that_does_not_serve(serve):
+    world = HttpWorld(serve)
+    world.writable = False
+    sup = world.supervisor()
+    for _ in range(5):
+        sup.tick()
+    assert world.requests == 0
+
+
+def test_a_new_start_warms_again(serve):
+    world = HttpWorld(serve)
+    world.writable = True
+    sup = world.supervisor()
+    for _ in range(serve.WARM_REQUESTS + 2):
+        sup.tick()
+    first = world.requests
+    world.writable = False
+    sup.tick()
+    world.writable = True
+    sup.tick()
+    assert world.requests == first + 1
+
+
+def test_warm_http_asks_the_login_page_on_the_loopback(serve, monkeypatch):
+    seen = {}
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake(url, timeout):
+        seen["url"], seen["timeout"] = url, timeout
+        return Response()
+    monkeypatch.setattr(serve.urllib.request, "urlopen", fake)
+    assert serve.warm_http() is True
+    assert seen["url"] == "http://127.0.0.1:8069/web/login"
+    assert seen["timeout"] == serve.WARM_TIMEOUT
+
+
+def test_warm_http_is_false_when_nothing_answers(serve, monkeypatch):
+    def fake(url, timeout):
+        raise OSError("refused")
+    monkeypatch.setattr(serve.urllib.request, "urlopen", fake)
+    assert serve.warm_http() is False

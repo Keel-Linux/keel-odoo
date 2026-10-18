@@ -16,6 +16,8 @@ node and the last part on one node only:
   server out of recovery, and is it open for writes? A standby can answer;
 - when the answer is yes, and the first boot hook has finished (the file
   READY), it forks a child that runs Odoo. The imports are already there;
+- after a start, it asks the login page a few times, so the HTTP workers
+  have their routing map before the first user comes;
 - when the answer is no, it stops the child at once. A fenced or old
   primary is in recovery, so it never serves;
 - when the server does not answer, it changes nothing, so a restart of
@@ -29,6 +31,7 @@ import os
 import signal
 import sys
 import time
+import urllib.request
 
 READY = "/var/lib/keel-odoo/ready"
 ODOO_BIN = "/opt/odoo/18.0/odoo-bin"
@@ -39,6 +42,12 @@ CONNECT_TIMEOUT = 2
 RESTART_DELAY = 1.0
 STOP_WAIT_STEPS = 600
 STOP_WAIT_SECONDS = 0.1
+# The first requests of a fresh Odoo build the routing map of each HTTP
+# worker (0.6 s to 0.8 s). The script makes them, so a user does not wait.
+WARM_URL = "http://127.0.0.1:8069/web/login"
+WARM_REQUESTS = 4
+WARM_SECONDS = 15
+WARM_TIMEOUT = 2
 QUESTION = "SELECT pg_is_in_recovery(), current_setting('transaction_read_only')"
 MODULES = "SELECT name FROM ir_module_module WHERE state = 'installed' ORDER BY name"
 
@@ -113,6 +122,15 @@ class Poller:
         return is_writable(*row)
 
 
+def warm_http():
+    """One request to the login page on the loopback: True if it answered."""
+    try:
+        with urllib.request.urlopen(WARM_URL, timeout=WARM_TIMEOUT) as response:  # nosec B310
+            return response.status == 200
+    except OSError:
+        return False
+
+
 def installed_modules(conn):
     """The names of the installed modules: a select, which a standby allows."""
     cursor = conn.cursor()
@@ -133,7 +151,8 @@ def import_modules(names, load):
 
 
 class Supervisor:
-    def __init__(self, poller, is_ready, start_child, stop_child, child_alive, clock, warm=None):
+    def __init__(self, poller, is_ready, start_child, stop_child, child_alive, clock, warm=None,
+                 warm_http=None):
         self.poller = poller
         self.is_ready = is_ready
         self.start_child = start_child
@@ -142,6 +161,9 @@ class Supervisor:
         self.clock = clock
         self.warm = warm
         self.warmed = False
+        self.warm_http = warm_http
+        self.warm_left = 0
+        self.warm_until = 0.0
         self.child = None
         self.not_before = 0.0
 
@@ -161,15 +183,27 @@ class Supervisor:
             # no connection may be open at the fork
             self.poller.close()
             self.child = self.start_child()
+            self.warm_left = WARM_REQUESTS
+            self.warm_until = self.clock() + WARM_SECONDS
             print("<5>keel-odoo: serving", flush=True)
         elif action == "stop":
             self.stop_all()
+        self.warm_workers()
+
+    def warm_workers(self):
+        if self.child is None or self.warm_left <= 0 or self.warm_http is None:
+            return
+        if self.clock() > self.warm_until:
+            self.warm_left = 0
+        elif self.warm_http():
+            self.warm_left -= 1
 
     def stop_all(self):
         if self.child is None:
             return
         self.stop_child(self.child)
         self.child = None
+        self.warm_left = 0
         print("<5>keel-odoo: stopped, the node is not writable", flush=True)
 
 
@@ -252,7 +286,7 @@ def main():  # pragma: no cover
     signal.signal(signal.SIGTERM, lambda *_: stopping.append(True))
     signal.signal(signal.SIGINT, lambda *_: stopping.append(True))
     supervisor = Supervisor(Poller(connect), is_ready, fork_odoo, stop_child, child_alive, time.monotonic,
-                            warm_modules)
+                            warm_modules, warm_http)
     print("<5>keel-odoo: loaded, waiting for a writable PostgreSQL", flush=True)
     while not stopping:
         supervisor.tick()
