@@ -27,8 +27,9 @@ tls:
   acme:
     enabled: false
 
-appliance:
-  name: odoo
+# No appliance section: `keel spec apply` runs on the host of the boot test,
+# whose /usr/share/keel does not hold odoo.yaml, and refuses a name that it
+# does not know. keel diff reads the manifests of the rootfs (--root).
 
 secrets:
   root_password:
