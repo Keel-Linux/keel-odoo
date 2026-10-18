@@ -319,3 +319,72 @@ def test_close_survives_a_connection_that_cannot_close(serve):
     poller.writable()
     poller.close()
     assert poller.conn is None
+
+
+class WarmWorld(World):
+    """The world, with a warm step that counts its calls."""
+
+    def __init__(self, serve):
+        super().__init__(serve)
+        self.warmed = 0
+
+    def supervisor(self):
+        sup = super().supervisor()
+        sup.warm = self.warm
+        return sup
+
+    def warm(self):
+        self.warmed += 1
+
+
+def test_the_modules_are_loaded_once_when_the_server_first_answers(serve):
+    world = WarmWorld(serve)
+    world.writable = None
+    sup = world.supervisor()
+    sup.tick()
+    sup.tick()
+    assert world.warmed == 0
+    world.writable = False
+    sup.tick()
+    sup.tick()
+    assert world.warmed == 1
+
+
+def test_the_warm_step_comes_before_the_first_start(serve):
+    world = WarmWorld(serve)
+    world.writable = True
+    sup = world.supervisor()
+    order = []
+    sup.warm = lambda: order.append("warm")
+    sup.start_child = lambda: order.append("start") or 4242
+    sup.tick()
+    assert order == ["warm", "start"]
+
+
+def test_installed_modules_reads_the_names_with_one_select(serve):
+    conn = FakeConnection(row=None)
+    conn.rows = [("base",), ("web",)]
+    conn_cursor = conn.cursor
+
+    class Cursor(FakeCursor):
+        def fetchall(self):
+            return conn.rows
+    conn.cursor = lambda: Cursor(conn)
+    assert serve.installed_modules(conn) == ["base", "web"]
+    assert "ir_module_module" in conn.queries[0]
+    assert "installed" in conn.queries[0]
+    for word in ("INSERT", "UPDATE", "CREATE", "DELETE"):
+        assert word not in conn.queries[0].upper()
+    assert conn_cursor
+
+
+def test_import_modules_goes_on_after_a_module_that_does_not_import(serve, capsys):
+    seen = []
+
+    def load(name):
+        if name == "bad":
+            raise ImportError("no such thing")
+        seen.append(name)
+    serve.import_modules(["base", "bad", "web"], load)
+    assert seen == ["base", "web"]
+    assert "bad" in capsys.readouterr().err

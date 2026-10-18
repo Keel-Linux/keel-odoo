@@ -40,7 +40,8 @@ again after a failover.
 
 Odoo is loaded on every node and serves on the node whose PostgreSQL
 accepts writes. ``odoo.service`` runs ``/usr/lib/keel-odoo/serve.py``. It
-imports Odoo, then asks PostgreSQL every 0.2 seconds one read only question:
+imports Odoo and the code of the installed modules (a read of the database,
+which a standby allows), then asks PostgreSQL every 0.2 seconds one read only question:
 is the server out of recovery and open for writes? A standby answers it, and
 a standby is never writable. On the writable node, and after the first boot
 hook has finished, it starts Odoo at once, with the imports done. On a node
