@@ -1,13 +1,56 @@
 #include <turnkey/base>
-#include <turnkey/lapp>
 
-odoo-16
-xfonts-75dpi
-wkhtmltopdf
-python3-psycogreen
+/* The Python libraries of Odoo 18.0 from Debian 13, the list of Odoo's own
+   debian/control. Nothing is installed with pip (decision 0022). */
+python3-asn1crypto
+python3-babel
+python3-cbor2
+python3-chardet
+python3-cryptography
+python3-dateutil
+python3-decorator
+python3-docutils
+python3-freezegun
+python3-geoip2
+python3-gevent
+python3-greenlet
+python3-idna
+python3-pil
+python3-jinja2
+python3-libsass
+python3-lxml
+python3-lxml-html-clean
+python3-markupsafe
+python3-num2words
+python3-ofxparse
+python3-openpyxl
+python3-passlib
+python3-polib
+python3-psutil
+python3-psycopg2
+python3-openssl
+python3-pypdf
+python3-rjsmin
+python3-qrcode
+python3-renderpm
+python3-reportlab
+python3-requests
+python3-stdnum
+python3-tz
+python3-urllib3
+python3-vobject
+python3-werkzeug
+python3-xlsxwriter
+python3-xlrd
+python3-zeep
+python3-ldap
 
-adduser             
-postgresql-client   
-python3
+/* fonts that Odoo's PDF and web client use */
+fonts-dejavu-core
+fonts-inconsolata
+fonts-font-awesome
+fonts-roboto-unhinted
+libjs-underscore
 
-python3-passlib      /* Needed to set admin password */
+/* the build fetches the Odoo snapshot with git */
+git

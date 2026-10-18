@@ -1,0 +1,14 @@
+#!/bin/bash -e
+# Set the Odoo admin password, the master password and the base URL from the
+# spec (secrets.app_password and app.domain), and renew the secrets that the
+# image shares. Runs after 35pgsqlpass and 36pgsqlverify of the lnpp layer,
+# so PostgreSQL answers. Odoo is not running: follow.py waits for
+# the end of the first boot.
+
+# shellcheck source=/dev/null
+. /etc/default/inithooks
+
+# shellcheck source=/dev/null
+[ -e "$INITHOOKS_CONF" ] && . "$INITHOOKS_CONF"
+
+"$INITHOOKS_PATH/bin/odoo.py" --pass="$APP_PASS" --domain="$APP_DOMAIN"

@@ -1,87 +1,71 @@
 #!/bin/bash -ex
-
-# Set variables
+# The odoo layer (handbook decision 0059, step 6): Odoo 18.0 on the lnpp
+# layer. It runs in the image chroot, after the overlay is in place.
 #
- 
-DB_USER=odoo
-DB_PASS=$(mcookie)
-DB_NAME="TurnkeylinuxExample"
+# 1. The source is a checkout of the Keel-Linux/odoo snapshot at a tag,
+#    and the build stops if the commit is not the one pinned here. The
+#    snapshot is one commit of the upstream branch 18.0, so the pinned
+#    commit names the upstream commit too.
+# 2. The database role odoo has no password: it connects on the unix socket
+#    and PostgreSQL authenticates the operating system user (peer).
+# 3. The database odoo is installed here with the base module, so the first
+#    boot is short. Attachments go to the database (ir_attachment.location),
+#    so the pair of decision 0054 carries them: a failover loses no file.
+#    The first boot hook renews the secrets that every image shares.
 
-# We will use a random password for now. Reset during inithook
-ODOO_ADMIN_PASSWORD=$(mcookie)
-
-# User name that Odoo will run under
-SERVICE_USER=$DB_USER
-
+ODOO_URL=https://git.pop.coop/Keel-Linux/odoo.git
+ODOO_TAG=snapshot-18.0-1f2b50ade7a1
+ODOO_COMMIT=aec78b6bc4c266c787f9b747c1666fd41b680973
+ODOO_UPSTREAM=1f2b50ade7a11e11cbcd792b5b6df439525c54d0
+ODOO_DIR=/opt/odoo/18.0
 CONF=/etc/odoo/odoo.conf
 
-# Create database role for odoo
-# *******************************************
- 
-# Start postgresql server
+mkdir -p /opt/odoo/extra-addons
+git clone --quiet --depth 1 --branch "$ODOO_TAG" "$ODOO_URL" "$ODOO_DIR"
+[ "$(git -C "$ODOO_DIR" rev-parse HEAD)" = "$ODOO_COMMIT" ]
+rm -rf "$ODOO_DIR/.git"
+cat > /opt/odoo/REVISION <<REV
+odoo 18.0
+snapshot $ODOO_COMMIT ($ODOO_URL, tag $ODOO_TAG)
+upstream $ODOO_UPSTREAM (https://github.com/odoo/odoo, branch 18.0)
+REV
+# Bytecode that depends on the source's content and not on its time, so the
+# unit can run with a read only /opt and the layer's bytes do not depend on
+# the time of the build.
+python3 -m compileall -q -j 0 --invalidation-mode checked-hash "$ODOO_DIR/odoo" "$ODOO_DIR/addons" > /dev/null
+ln -s "$ODOO_DIR/odoo-bin" /usr/bin/odoo
+
+adduser --system --group --home /var/lib/odoo --no-create-home \
+    --shell /usr/sbin/nologin odoo
+install -d -o odoo -g odoo -m 0750 /var/lib/odoo
+chown root:odoo "$CONF"
+chmod 0640 "$CONF"
+
 systemctl start postgresql
 
-# Create db user
-su postgres -c "createuser --superuser --createdb --no-createrole $DB_USER"
+su postgres -c "createuser --no-superuser --createdb --no-createrole odoo"
+su postgres -c "createdb --owner odoo --encoding UTF8 --template template0 odoo"
+runuser -u odoo -- python3 "$ODOO_DIR/odoo-bin" --config "$CONF" \
+    -i base --without-demo=all --stop-after-init
 
-# Set db user password
-su postgres -c "psql postgres" << EOF
-alter user $DB_USER with encrypted password '$DB_PASS';
-EOF
-su postgres -c "psql postgres" << EOF
-create database "$DB_NAME" owner $DB_USER;
-EOF
+psql_odoo() { runuser -u odoo -- psql -X -q -At -v ON_ERROR_STOP=1 -d odoo "$@"; }
 
-# Set password/name in config file
-sed -i "s|db_password =.*|db_password = $DB_PASS|" $CONF
-sed -i "s|db_host =.*|db_host = localhost|" $CONF
-echo "db_name = $DB_NAME" >> $CONF
+psql_odoo <<'SQL'
+INSERT INTO ir_config_parameter (key, value, create_uid, write_uid, create_date, write_date)
+VALUES ('ir_attachment.location', 'db', 1, 1, now(), now())
+ON CONFLICT (key) DO UPDATE SET value = 'db';
+SQL
+# The attachments that the installation wrote (the asset bundles) are files
+# until force_storage moves them into the database.
+echo "env['ir.attachment'].force_storage(); env.cr.commit()" \
+    | runuser -u odoo -- python3 "$ODOO_DIR/odoo-bin" shell --config "$CONF" --no-http
+[ "$(psql_odoo -c "SELECT count(*) FROM ir_attachment WHERE store_fname IS NOT NULL")" = 0 ]
+[ "$(psql_odoo -c "SELECT count(*) FROM ir_attachment WHERE db_datas IS NULL AND res_model IS NOT NULL AND type = 'binary'")" = 0 ]
+# The files that the installation left are orphans now.
+rm -rf /var/lib/odoo/filestore /var/lib/odoo/sessions
 
-# Stop postgresql server
 systemctl stop postgresql
 
-# Set admin password to random value for now
-sed -i "s|admin_passwd =.*|admin_passwd = $ODOO_ADMIN_PASSWORD|" $CONF
-chown odoo:odoo $CONF
-
-# Add and disable service user
-usermod -L $SERVICE_USER
-
-# Enable needed modules
-a2enmod proxy_http headers rewrite		
-
-# Configure sites
-a2dissite 000-default
-a2ensite odoo.conf
-
-# Populate database
-systemctl start postgresql
-systemctl start apache2
-
-su odoo -g odoo -s '/bin/bash' -c 'odoo -i base \
-    --stop-after-init --db_host=localhost \
-    -d '"\"$DB_NAME\""' \
-    -r '"\"$DB_USER\""' \
-    -w '"\"$DB_PASS\""' \
-    -s -c '"\"$CONF\""
-
-# enable and start odoo
-systemctl enable odoo
-systemctl start odoo
-
-while [[ "$(curl -Lk http://localhost)" = *"Unavailable"* ]]; do
-    sleep 1
-done
-
-URL="https://127.0.0.1/web"
-CURL="curl --insecure -c /tmp/cookie -b /tmp/cookie"
-
-$CURL $URL/login
-sleep 1
-$CURL $URL/database/manager
-sleep 1
-$CURL $URL/database/change_password --data-raw "master_pwd=admin&master_pwd_new=${ODOO_ADMIN_PASSWORD}"
-
-systemctl stop odoo
-systemctl stop postgresql
-systemctl stop apache2 
+# The timer starts Odoo on the node whose PostgreSQL is writable. The unit
+# has no Install section, and the preset names it as disabled.
+systemctl enable keel-odoo-follow.timer
