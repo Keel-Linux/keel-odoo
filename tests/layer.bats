@@ -174,6 +174,10 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     [ "$output" = 2 ]
 }
 
+@test "the spec of the boot test names no appliance, because the host of the test does not know odoo" {
+    run ! grep -q '^appliance:' tests/instance.yaml
+}
+
 @test "no Apache anywhere in the layer" {
     run ! grep -rIl "apache2\|a2enmod\|a2ensite" "$OVERLAY" conf.d/main plan Makefile
 }
