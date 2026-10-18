@@ -51,6 +51,16 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     run ! grep -q "^\[Install\]" "$ODOO_UNIT"
 }
 
+@test "odoo.service: no kernel tunables, no capabilities, only the address families it uses" {
+    grep -qx "ProtectKernelTunables=yes" "$ODOO_UNIT"
+    grep -qx "ProtectKernelModules=yes" "$ODOO_UNIT"
+    grep -qx "ProtectControlGroups=yes" "$ODOO_UNIT"
+    grep -qx "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" "$ODOO_UNIT"
+    grep -qx "CapabilityBoundingSet=" "$ODOO_UNIT"
+    grep -qx "LockPersonality=yes" "$ODOO_UNIT"
+    grep -qx "RestrictSUIDSGID=yes" "$ODOO_UNIT"
+}
+
 @test "odoo.service: no write access outside the data directory, no privileges" {
     grep -qx "ProtectSystem=strict" "$ODOO_UNIT"
     grep -qx "ReadWritePaths=/var/lib/odoo" "$ODOO_UNIT"
@@ -127,16 +137,34 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 @test "coraza: a CRS plugin that ends 930130 on the path of the Odoo routes only" {
     grep -q 'id:10100,' "$CRS"
     grep -q 'ctl:ruleRemoveTargetById=930130;REQUEST_FILENAME' "$CRS"
-    # the model is a plain name: no slash and no dot segment can reach the exclusion
-    grep -qF '^/web/dataset/(?:call_kw|call_button)/[a-z0-9_.]+/[a-z0-9_]+$' "$CRS"
-    # one rule, and it does not switch the rule off for arguments or headers
+    # one rule, and it does not switch a whole rule off
     run grep -c '^SecRule' "$CRS"
     [ "$output" = 1 ]
     run ! grep -q 'ruleRemoveById=' "$CRS"
 }
 
-@test "hook: a thin wrapper that hands the spec's values to odoo.py" {
-    grep -q 'bin/odoo.py" --pass="\$APP_PASS" --domain="\$APP_DOMAIN"' "$HOOK"
+@test "coraza: the exclusion matches the Odoo routes and no path that is a file" {
+    rx=$(sed -n 's/^SecRule REQUEST_FILENAME "@rx \(.*\)" \\$/\1/p' "$CRS")
+    [ -n "$rx" ]
+    check() { python3 -c 'import re, sys; sys.exit(0 if re.search(sys.argv[1], sys.argv[2]) else 1)' "$rx" "$1"; }
+    check /web/dataset/call_kw/res.config.settings/get_views
+    check /web/dataset/call_kw/res.users.settings/set_res_users_settings
+    check /web/dataset/call_button/res.partner/action_archive
+    run ! check /web/dataset/call_kw/../makefile
+    run ! check /web/dataset/call_kw/.../x
+    run ! check /web/dataset/call_kw/res..settings/get_views
+    run ! check /web/dataset/call_kw/.settings/get_views
+    run ! check /web/dataset/call_kw/res.config.settings/get_views/extra
+    run ! check /web/dataset/call_kw/res.config.settings/../../.git/config
+    run ! check /other/web/dataset/call_kw/res.config.settings/get_views
+    run ! check /.git/config
+}
+
+@test "hook: the password goes in the environment, the domain in the arguments" {
+    grep -qx 'export APP_PASS' "$HOOK"
+    grep -q 'bin/odoo.py" --domain="\$APP_DOMAIN"' "$HOOK"
+    run ! grep -q -- '--pass=' "$HOOK"
+    grep -qx 'systemctl try-restart odoo.service' "$HOOK"
 }
 
 @test "services screen: the Odoo address and the check page" {

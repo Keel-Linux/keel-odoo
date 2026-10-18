@@ -33,9 +33,16 @@ keel-odoo-19.0 (1) keel; urgency=low
     covers that rule, for REQUEST_FILENAME, for these routes only.
   * The first boot hook 45odoo sets the admin password and the master
     password from secrets.app_password, freezes web.base.url from
-    app.domain, and renews database.secret and database.uuid. It fails
-    with a message when a headless first boot gives no password. The old
-    hook imported crypt, which Python 3.13 removed.
+    app.domain, and renews database.secret and database.uuid once. It takes
+    the password from the environment, makes the hash with hashlib, and
+    fails with a message when a headless first boot gives no password. The
+    old hook imported crypt, which Python 3.13 removed.
+  * The image has no known password. The admin user has a NULL password
+    after the build, and Odoo does not start before the hook has written
+    /var/lib/keel-odoo/ready, so a failed first boot hook leaves Odoo off.
+    The database role odoo cannot create databases.
+  * odoo.service runs with no capability, no kernel tunable, no namespace
+    and only the address families that Odoo uses.
 
  -- KeelLinux maintainers <admin@keellinux.org>  Sun, 18 Oct 2026 04:30:00 +0000
 

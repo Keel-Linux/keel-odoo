@@ -14,33 +14,30 @@ import pytest
 HASH = "$pbkdf2-sha512$600000$abcDEF123./$xyz789ABC./"
 
 
-def test_hash_asks_passlib_for_odoos_scheme_and_rounds(hook, monkeypatch):
-    import sys
-    import types
-    seen = {}
-
-    class CryptContext:
-        def __init__(self, schemes, **options):
-            seen.update(schemes=schemes, **options)
-
-        def hash(self, password):
-            return HASH
-
-    module = types.ModuleType("passlib.context")
-    module.CryptContext = CryptContext
-    monkeypatch.setitem(sys.modules, "passlib", types.ModuleType("passlib"))
-    monkeypatch.setitem(sys.modules, "passlib.context", module)
-    assert hook.hash_password("s3cret pass") == HASH
-    assert seen == {"schemes": ["pbkdf2_sha512"], "pbkdf2_sha512__rounds": 600000}
-
-
-def test_hash_with_the_real_passlib_verifies(hook):
-    pytest.importorskip("passlib")
+def test_hash_has_the_form_of_odoos_hash_and_verifies(hook):
     hashed = hook.hash_password("s3cret pass")
     assert hook.HASH_RE.match(hashed)
-    assert hashed.startswith("$pbkdf2-sha512$600000$")
-    from passlib.context import CryptContext
-    assert CryptContext(["pbkdf2_sha512"]).verify("s3cret pass", hashed)
+    _, scheme, rounds, salt, digest = hashed.split("$")
+    assert (scheme, rounds) == ("pbkdf2-sha512", "600000")
+    # verify it again with hashlib: passlib's alphabet is base64 with "." for "+"
+    import base64
+    import hashlib
+
+    def unab64(text):
+        return base64.b64decode(text.replace(".", "+") + "=" * (-len(text) % 4))
+
+    again = hashlib.pbkdf2_hmac("sha512", b"s3cret pass", unab64(salt), 600000)
+    assert unab64(digest) == again
+
+
+def test_two_hashes_of_one_password_differ_by_salt(hook):
+    assert hook.hash_password("same") != hook.hash_password("same")
+
+
+def test_hash_is_what_passlib_accepts(hook):
+    passlib = pytest.importorskip("passlib.context")
+    hashed = hook.hash_password("s3cret pass")
+    assert passlib.CryptContext(["pbkdf2_sha512"]).verify("s3cret pass", hashed)
 
 
 def test_hash_refuses_an_empty_password(hook):
@@ -121,6 +118,31 @@ def test_write_conf_keeps_mode_and_owner(hook, tmp_path):
     assert [p.name for p in tmp_path.iterdir()] == ["odoo.conf"]
 
 
+def test_write_conf_creates_the_new_file_with_the_final_mode(hook, tmp_path, monkeypatch):
+    path = tmp_path / "odoo.conf"
+    path.write_text("old\n")
+    os.chmod(path, 0o640)
+    modes = []
+    real_fchmod = os.fchmod
+    monkeypatch.setattr(hook.os, "fchmod", lambda fd, mode: (modes.append(stat.S_IMODE(os.fstat(fd).st_mode)), real_fchmod(fd, mode)))
+    hook.write_conf(str(path), "new\n")
+    assert modes == [0o640]
+
+
+def test_write_conf_removes_its_temporary_file_on_failure(hook, tmp_path, monkeypatch):
+    path = tmp_path / "odoo.conf"
+    path.write_text("old\n")
+
+    def fail(fd, uid, gid):
+        raise PermissionError("no")
+
+    monkeypatch.setattr(hook.os, "fchown", fail)
+    with pytest.raises(PermissionError):
+        hook.write_conf(str(path), "new\n")
+    assert path.read_text() == "old\n"
+    assert [p.name for p in tmp_path.iterdir()] == ["odoo.conf"]
+
+
 def test_script_sets_hash_secrets_attachments_and_url(hook):
     script = hook.sql_script(HASH, "https://odoo.example.org")
     assert "\\set pw '" + HASH + "'" in script
@@ -130,6 +152,12 @@ def test_script_sets_hash_secrets_attachments_and_url(hook):
     assert "'database.secret'" in script and "'database.uuid'" in script
     assert "'ir_attachment.location'" in script and "'db'" in script
     assert "'web.base.url.freeze'" in script
+
+
+def test_a_later_run_keeps_the_secrets(hook):
+    script = hook.sql_script(HASH, None, first=False)
+    assert "gen_random_uuid" not in script
+    assert "UPDATE res_users SET password" in script
 
 
 def test_script_without_a_domain_leaves_the_url_alone(hook):
@@ -176,7 +204,15 @@ def test_read_password_prefers_the_given_one(hook):
     assert hook.read_password("abc", interactive=False) == "abc"
 
 
-def test_read_password_headless_without_a_password_fails_clearly(hook):
+def test_read_password_takes_the_environment_next(hook, monkeypatch):
+    monkeypatch.setenv("APP_PASS", "from the environment")
+    assert hook.read_password(None, interactive=False) == "from the environment"
+    assert hook.read_password("DEFAULT", interactive=False) == "from the environment"
+    assert hook.read_password("given", interactive=False) == "given"
+
+
+def test_read_password_headless_without_a_password_fails_clearly(hook, monkeypatch):
+    monkeypatch.delenv("APP_PASS", raising=False)
     with pytest.raises(hook.HookError, match="APP_PASS"):
         hook.read_password(None, interactive=False)
     with pytest.raises(hook.HookError, match="APP_PASS"):
@@ -184,6 +220,7 @@ def test_read_password_headless_without_a_password_fails_clearly(hook):
 
 
 def test_read_password_asks_on_a_console(hook, monkeypatch):
+    monkeypatch.delenv("APP_PASS", raising=False)
     asked = {}
 
     class Dialog:
@@ -209,37 +246,77 @@ def test_load_dialog_names_the_inithooks_class(hook, monkeypatch):
     assert hook.load_dialog() is object
 
 
-def test_main_runs_the_statements_then_writes_the_conf(hook, monkeypatch, tmp_path):
+def _hook_environment(hook, monkeypatch, tmp_path, recovery="f\n", check="1\n"):
     conf = tmp_path / "odoo.conf"
     conf.write_text("[options]\nadmin_passwd =\n")
+    ready = tmp_path / "state" / "ready"
     calls = []
 
     def fake_run_psql(script):
         calls.append(script)
-        return "1\n" if "SELECT count(*)" in script else ""
+        if "pg_is_in_recovery" in script:
+            return recovery
+        return check if "SELECT count(*)" in script else ""
 
     monkeypatch.setattr(hook, "CONF", str(conf))
+    monkeypatch.setattr(hook, "READY", str(ready))
     monkeypatch.setattr(hook, "run_psql", fake_run_psql)
     monkeypatch.setattr(hook, "hash_password", lambda password: HASH)
+    monkeypatch.delenv("APP_PASS", raising=False)
+    return conf, ready, calls
+
+
+def test_main_runs_the_statements_writes_the_conf_and_marks_the_end(hook, monkeypatch, tmp_path):
+    conf, ready, calls = _hook_environment(hook, monkeypatch, tmp_path)
     assert hook.main(["--pass=abc", "--domain=odoo.example.org"], interactive=False) == 0
-    assert len(calls) == 2
-    assert "web.base.url" in calls[0]
-    assert "FROM res_users" in calls[1]
+    assert len(calls) == 3
+    assert "pg_is_in_recovery" in calls[0]
+    assert "web.base.url" in calls[1] and "gen_random_uuid" in calls[1]
+    assert "FROM res_users" in calls[2]
     assert conf.read_text() == "[options]\nadmin_passwd = " + HASH + "\n"
+    assert ready.exists()
+
+
+def test_main_takes_the_password_from_the_environment(hook, monkeypatch, tmp_path):
+    conf, ready, calls = _hook_environment(hook, monkeypatch, tmp_path)
+    monkeypatch.setenv("APP_PASS", "from the environment")
+    assert hook.main(["--domain=odoo.example.org"], interactive=False) == 0
+    assert ready.exists()
+
+
+def test_a_second_run_keeps_the_secrets_that_the_first_renewed(hook, monkeypatch, tmp_path):
+    conf, ready, calls = _hook_environment(hook, monkeypatch, tmp_path)
+    assert hook.main(["--pass=abc"], interactive=False) == 0
+    assert hook.main(["--pass=abc"], interactive=False) == 0
+    assert "gen_random_uuid" in calls[1]
+    assert "gen_random_uuid" not in calls[4]
+
+
+def test_a_standby_gets_the_master_password_and_no_sql(hook, monkeypatch, tmp_path, capsys):
+    conf, ready, calls = _hook_environment(hook, monkeypatch, tmp_path, recovery="t\n")
+    assert hook.main(["--pass=abc"], interactive=False) == 0
+    assert len(calls) == 1
+    assert "standby" in capsys.readouterr().out
+    assert conf.read_text() == "[options]\nadmin_passwd = " + HASH + "\n"
+    assert ready.exists()
 
 
 def test_main_fails_when_the_admin_row_did_not_take_the_hash(hook, monkeypatch, tmp_path, capsys):
-    conf = tmp_path / "odoo.conf"
-    conf.write_text("[options]\nadmin_passwd =\n")
-    monkeypatch.setattr(hook, "CONF", str(conf))
-    monkeypatch.setattr(hook, "run_psql", lambda script: "0\n")
-    monkeypatch.setattr(hook, "hash_password", lambda password: HASH)
+    conf, ready, calls = _hook_environment(hook, monkeypatch, tmp_path, check="0\n")
     assert hook.main(["--pass=abc"], interactive=False) == 1
     assert "admin user" in capsys.readouterr().err
     assert conf.read_text() == "[options]\nadmin_passwd =\n"
+    assert not ready.exists()
 
 
-def test_main_reports_a_headless_run_without_a_password(hook, capsys):
+def test_mark_ready_makes_the_directory(hook, monkeypatch, tmp_path):
+    monkeypatch.setattr(hook, "READY", str(tmp_path / "a" / "b" / "ready"))
+    hook.mark_ready()
+    assert (tmp_path / "a" / "b" / "ready").read_text().startswith("the first boot hook")
+
+
+def test_main_reports_a_headless_run_without_a_password(hook, capsys, monkeypatch):
+    monkeypatch.delenv("APP_PASS", raising=False)
     assert hook.main([], interactive=False) == 1
     assert "APP_PASS" in capsys.readouterr().err
 

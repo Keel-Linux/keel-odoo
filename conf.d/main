@@ -63,8 +63,10 @@ chmod 0640 "$CONF"
 # with TLS off, for this build step alone. The unix socket needs no TLS.
 PGVER="$(ls /etc/postgresql/)"
 pg_ctlcluster "$PGVER" main start -o "-c ssl=off"
+# A failed step below must not leave the server running in the chroot.
+trap 'pg_ctlcluster "$PGVER" main stop || true' EXIT
 
-su postgres -c "createuser --no-superuser --createdb --no-createrole odoo"
+su postgres -c "createuser --no-superuser --no-createdb --no-createrole odoo"
 su postgres -c "createdb --owner odoo --encoding UTF8 --template template0 odoo"
 runuser -u odoo -- python3 "$ODOO_DIR/odoo-bin" --config "$CONF" \
     -i base --without-demo=all --stop-after-init
@@ -82,10 +84,19 @@ echo "env['ir.attachment'].force_storage(); env.cr.commit()" \
     | runuser -u odoo -- python3 "$ODOO_DIR/odoo-bin" shell --config "$CONF" --no-http
 [ "$(psql_odoo -c "SELECT count(*) FROM ir_attachment WHERE store_fname IS NOT NULL")" = 0 ]
 [ "$(psql_odoo -c "SELECT count(*) FROM ir_attachment WHERE db_datas IS NULL AND res_model IS NOT NULL AND type = 'binary'")" = 0 ]
+# The installation gave the admin user the password "admin", the same in
+# every image. A NULL password cannot log in. The first boot hook sets the
+# password of the spec, and Odoo does not start before the hook has
+# finished (usr/lib/keel-odoo/follow.py).
+psql_odoo <<'SQL'
+UPDATE res_users SET password = NULL WHERE login = 'admin';
+SQL
+[ "$(psql_odoo -c "SELECT count(*) FROM res_users WHERE password IS NOT NULL")" = 0 ]
 # The files that the installation left are orphans now.
 rm -rf /var/lib/odoo/filestore /var/lib/odoo/sessions
 
 pg_ctlcluster "$PGVER" main stop
+trap - EXIT
 
 # The timer starts Odoo on the node whose PostgreSQL is writable. The unit
 # has no Install section, and the preset names it as disabled.

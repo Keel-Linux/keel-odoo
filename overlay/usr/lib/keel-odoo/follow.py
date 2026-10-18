@@ -9,35 +9,51 @@ other node. keel-odoo-follow.timer runs this script every few seconds:
 - in recovery and Odoo running: stop Odoo;
 - the server does not answer: change nothing, so a restart of PostgreSQL
   does not take Odoo down;
-- the first boot is still running: do not start Odoo, because the first
-  boot hooks change the database that Odoo would load.
+- the first boot hook has not finished (no file READY): do not start Odoo.
+  The image has the password of a fresh Odoo until the hook sets the
+  password of the spec, so a failed hook leaves Odoo off.
 
 This script is the only supervisor of odoo.service, so the unit is not a
 process of the appliance manifest (Monit would start it on a standby).
 """
+import os
 import subprocess
 import sys
 
-INITHOOKS_DEFAULT = "/etc/default/inithooks"
+READY = "/var/lib/keel-odoo/ready"
+LAST_ERROR = "/run/keel-odoo-follow.error"
 SERVICE = "odoo.service"
 PSQL_TIMEOUT = 5
 
 
-def decide(firstboot, writable, active):
+def decide(ready, writable, active):
     """The action for the state: "start", "stop" or None."""
     if writable is False and active:
         return "stop"
-    if writable is True and not active and not firstboot:
+    if writable is True and not active and ready:
         return "start"
     return None
 
 
-def firstboot_running(path=INITHOOKS_DEFAULT):
+def is_ready(path=READY):
+    return os.path.exists(path)
+
+
+def report(message, path=None):
+    """Say a problem once, not every 3 seconds: <4> is the syslog level
+    "warning". An empty message clears the last one."""
+    path = path or LAST_ERROR
     try:
         with open(path) as handle:
-            return any(line.strip() == "RUN_FIRSTBOOT=true" for line in handle)
+            last = handle.read()
     except FileNotFoundError:
-        return False
+        last = ""
+    if message == last:
+        return
+    with open(path, "w") as handle:
+        handle.write(message)
+    if message:
+        print("<4>keel-odoo-follow: %s" % message, file=sys.stderr)
 
 
 def pg_writable():
@@ -50,10 +66,13 @@ def pg_writable():
         result = subprocess.run(argv, capture_output=True, text=True, timeout=PSQL_TIMEOUT,
                                 user="odoo", group="odoo")
     except subprocess.TimeoutExpired:
+        report("PostgreSQL did not answer in %d s" % PSQL_TIMEOUT)
         return None
     answer = result.stdout.strip()
     if result.returncode != 0 or answer not in ("t", "f"):
+        report("PostgreSQL gave no answer to the odoo user: %s" % (result.stderr.strip() or answer or "nothing"))
         return None
+    report("")
     return answer == "f"
 
 
@@ -62,7 +81,7 @@ def odoo_active():
 
 
 def main():
-    action = decide(firstboot_running(), pg_writable(), odoo_active())
+    action = decide(is_ready(), pg_writable(), odoo_active())
     if action is None:
         return 0
     argv = ["systemctl", action, SERVICE]

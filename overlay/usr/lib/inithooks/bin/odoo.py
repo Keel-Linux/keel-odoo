@@ -3,8 +3,9 @@
 
 Options:
     --pass=      the password of the admin user and the master password;
-                 unless given, ask on the console (a headless first boot
-                 must give it: secrets.app_password of the spec)
+                 unless given, the variable APP_PASS, else ask on the
+                 console (a headless first boot must give it:
+                 secrets.app_password of the spec, rendered to APP_PASS)
     --domain=    the domain of the site; sets and freezes web.base.url
 
 The hook also renews the secrets that every image shares (database.secret
@@ -13,13 +14,19 @@ database, so a failover of the pair keeps them (handbook decision 0059).
 Odoo is not running while the first boot hooks run.
 """
 
+import base64
 import getopt
+import hashlib
 import os
 import re
 import subprocess
 import sys
 
 CONF = "/etc/odoo/odoo.conf"
+# The file that tells keel-odoo-follow.timer that the first boot hook has
+# finished: until it exists, Odoo does not start, so a failed hook never
+# leaves Odoo running with the password of the image.
+READY = "/var/lib/keel-odoo/ready"
 DATABASE = "odoo"
 SERVICE_USER = "odoo"
 # Odoo 18: odoo/tools/config.py, crypt_context
@@ -65,12 +72,20 @@ def given(value):
     return value
 
 
+def ab64(data):
+    """passlib's alphabet: base64 with "." for "+", and no padding."""
+    return base64.b64encode(data).decode().rstrip("=").replace("+", ".")
+
+
 def hash_password(password):
-    """The hash that Odoo 18 stores: PBKDF2-SHA512, 600000 rounds."""
+    """The hash that Odoo 18 stores, in passlib's format: PBKDF2-SHA512,
+    600000 rounds, a random salt. hashlib makes it, so the hook needs no
+    other library, and Odoo's passlib verifies it."""
     if not password:
         raise HookError("the password is empty")
-    from passlib.context import CryptContext
-    return CryptContext(["pbkdf2_sha512"], pbkdf2_sha512__rounds=PBKDF2_ROUNDS).hash(password)
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac("sha512", password.encode(), salt, PBKDF2_ROUNDS)
+    return "$pbkdf2-sha512$%d$%s$%s" % (PBKDF2_ROUNDS, ab64(salt), ab64(digest))
 
 
 def base_url(domain):
@@ -91,28 +106,37 @@ def set_option(text, key, value):
 
 
 def write_conf(path, text):
-    """Replace the file in one step, with its mode and owner."""
+    """Replace the file in one step, with its mode and owner. The new file
+    has its final mode from the start."""
     info = os.stat(path)
     temporary = path + ".new"
-    with open(temporary, "w") as handle:
-        handle.write(text)
-    os.chmod(temporary, info.st_mode & 0o7777)
-    os.chown(temporary, info.st_uid, info.st_gid)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, info.st_mode & 0o7777)
+    try:
+        os.fchmod(descriptor, info.st_mode & 0o7777)
+        os.fchown(descriptor, info.st_uid, info.st_gid)
+        with os.fdopen(descriptor, "w") as handle:
+            handle.write(text)
+    except BaseException:
+        os.unlink(temporary)
+        raise
     os.replace(temporary, path)
 
 
-def sql_script(password_hash, url):
+def sql_script(password_hash, url, first=True):
     """The statements of the hook. The hash and the URL are checked before
-    they go into the text, and psql quotes them as literals."""
+    they go into the text, and psql quotes them as literals. With first
+    false (a later run of the hook) the secrets are kept."""
     if not HASH_RE.match(password_hash):
         raise HookError("the password hash does not have the form of Odoo's hash")
     if url is not None and ("'" in url or "\\" in url or "\n" in url):
         raise HookError("the URL has a character that a SQL literal cannot hold")
     lines = ["\\set pw '%s'" % password_hash]
     lines.append("UPDATE res_users SET password = :'pw' WHERE login = 'admin';")
-    lines.append(
-        "UPDATE ir_config_parameter SET value = gen_random_uuid()::text, write_date = now() "
-        "WHERE key IN ('database.secret', 'database.uuid');")
+    if first:
+        # every image has the same secrets: renewed once, at the first run
+        lines.append(
+            "UPDATE ir_config_parameter SET value = gen_random_uuid()::text, write_date = now() "
+            "WHERE key IN ('database.secret', 'database.uuid');")
     parameters = [("ir_attachment.location", "'db'")]
     if url is not None:
         lines.insert(1, "\\set url '%s'" % url)
@@ -144,7 +168,7 @@ def load_dialog():
 
 
 def read_password(password, interactive):
-    password = given(password)
+    password = given(password) or given(os.environ.get("APP_PASS"))
     if password:
         return password
     if not interactive:
@@ -158,6 +182,17 @@ def read_password(password, interactive):
         blacklist=["\\", "/"])
 
 
+def in_recovery():
+    """True on a standby: it takes no write, and the primary has the rows."""
+    return run_psql("SELECT pg_is_in_recovery();").strip() == "t"
+
+
+def mark_ready():
+    os.makedirs(os.path.dirname(READY), mode=0o755, exist_ok=True)
+    with open(READY, "w") as handle:
+        handle.write("the first boot hook of Odoo has finished\n")
+
+
 def main(argv, interactive):
     try:
         password, domain = parse_args(argv)
@@ -165,14 +200,18 @@ def main(argv, interactive):
         domain = given(domain)
         url = base_url(domain) if domain else None
         password_hash = hash_password(password)
-        run_psql(sql_script(password_hash, url))
-        # The row must hold the hash: UPDATE says nothing when no row matches.
-        check = "\\set pw '%s'\nSELECT count(*) FROM res_users WHERE login = 'admin' AND password = :'pw';\n" % password_hash
-        if run_psql(check).strip() != "1":
-            raise HookError("the admin user of the %s database does not hold the new password" % DATABASE)
+        if in_recovery():
+            print("odoo: PostgreSQL is a standby: the database is the primary's; only the master password is set")
+        else:
+            run_psql(sql_script(password_hash, url, first=not os.path.exists(READY)))
+            # The row must hold the hash: UPDATE says nothing when no row matches.
+            check = "\\set pw '%s'\nSELECT count(*) FROM res_users WHERE login = 'admin' AND password = :'pw';\n" % password_hash
+            if run_psql(check).strip() != "1":
+                raise HookError("the admin user of the %s database does not hold the new password" % DATABASE)
         with open(CONF) as handle:
             text = handle.read()
         write_conf(CONF, set_option(text, "admin_passwd", password_hash))
+        mark_ready()
     except HookError as error:
         print("odoo: %s" % error, file=sys.stderr)
         return 1
