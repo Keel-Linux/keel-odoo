@@ -45,7 +45,8 @@ ROUTE
 proxy_set_header Host $host;
 proxy_pass http://[::1]:8923;
 SNIPPET
-    mkdir -p /var/www/keel-default /etc/ssl/private /usr/local/share/ca-certificates
+    mkdir -p /var/www/keel-default /etc/ssl/private /usr/local/share/ca-certificates /run/nginx
+    chown www-data /run/nginx
     printf 'not found\n' > /var/www/keel-default/404.html
     printf 'error\n' > /var/www/keel-default/50x.html
     printf 'default\n' > /var/www/keel-default/index.html
