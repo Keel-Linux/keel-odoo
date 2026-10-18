@@ -1,0 +1,75 @@
+# The node A of an Odoo pair (handbook decisions 0049, 0054 and 0059):
+# PostgreSQL replicated to a node B on the WireGuard mesh, the primary
+# holding the VIP. Node B has the same file with role: replica and its own
+# hostname and overlay address. The mesh comes first (keel mesh create on
+# A, keel mesh invite and keel mesh join for B), then keel vip pair, as
+# docs/replication-postgresql.md of the keel repository says. The
+# addresses are examples from the documentation prefix of the overlay.
+version: 1
+
+instance:
+  hostname: odoo-a
+  fqdn: odoo-a.example.org
+
+network:
+  managed_by: host
+  interfaces:
+    eth0:
+      ipv6:
+        method: auto
+  # this node's side of the mesh; keel mesh join writes the peers
+  overlay:
+    wireguard:
+      interface: wg0
+      address: fd2a:9c41:7e03::1/64
+      listen_port: 51820
+      peers: []
+
+tls:
+  acme:
+    enabled: false
+
+secrets:
+  root_password:
+    file: /etc/keel/secrets/root_password
+  # the pair holds one value (the manifest says shared: true)
+  db_password:
+    file: /etc/keel/secrets/db_password
+  # both nodes get the same value; the password hash differs by node, the password does not
+  app_password:
+    file: /etc/keel/secrets/app_password
+
+appliance:
+  name: odoo
+  vip: fd2a:9c41:7e03::ffff:1   # in the overlay's VIP range, no region's
+
+installation:
+  mode: cloud_simple
+
+overlays:
+  installer: enabled
+  wireguard: enabled
+  etcd: disabled
+  crowdsec: enabled
+  vip: enabled
+  nginx: enabled
+  coraza: enabled
+  anubis: enabled
+
+database:
+  server:
+    engine: postgresql
+    role: primary               # the role chosen at installation (0020)
+    listen: [fd2a:9c41:7e03::1, "::1", 127.0.0.1]
+
+app:
+  domain: odoo.example.org
+
+hub:
+  api_key: skip
+
+security:
+  alerts: skip
+  updates_at_first_boot: skip
+
+first_login_wizard: false

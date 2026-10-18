@@ -1,0 +1,70 @@
+# Instance description of an Odoo appliance, standalone, IPv6 first (docs/spec.md in
+# the keel repository). Copy to /etc/keel/instance.yaml and create the three
+# secret files (mode 0600, owned by root) before the first boot:
+#
+#   /etc/keel/secrets/root_password
+#   /etc/keel/secrets/db_password     the PostgreSQL 'postgres' role
+#   /etc/keel/secrets/app_password    the Odoo admin user and the master password
+#
+# secrets.app_password is what firstboot.d/45odoo sets. Leave it out and a
+# first boot with no console stops with a message that names APP_PASS.
+version: 1
+
+instance:
+  hostname: odoo
+  fqdn: odoo.example.org
+
+network:
+  # LXC: the host owns eth0 and the address comes by SLAAC from the host's
+  # /64. Switch to method static with an address once a DNS record points
+  # at it, so the address the record names never moves.
+  managed_by: host
+  interfaces:
+    eth0:
+      ipv6:
+        method: auto
+
+tls:
+  acme:
+    # Odoo is served with the certificate of the machine until the Certificate
+    # screen of confconsole gets one from an ACME server. Webmin, on 12321,
+    # carries its own certificate.
+    enabled: false
+
+appliance:
+  name: odoo
+
+installation:
+  mode: simple
+
+# Every overlay of the chain is written out (decisions 0027 and 0041).
+overlays:
+  installer: enabled
+  wireguard: disabled
+  etcd: disabled
+  crowdsec: disabled
+  vip: disabled
+  nginx: enabled
+  coraza: disabled
+  anubis: disabled
+
+secrets:
+  root_password:
+    file: /etc/keel/secrets/root_password
+  db_password:
+    file: /etc/keel/secrets/db_password
+  app_password:
+    file: /etc/keel/secrets/app_password
+
+app:
+  # firstboot.d/45odoo freezes web.base.url to https://<domain>
+  domain: odoo.example.org
+
+hub:
+  api_key: skip
+
+security:
+  alerts: skip
+  updates_at_first_boot: skip
+
+first_login_wizard: false

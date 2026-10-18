@@ -1,0 +1,86 @@
+# Tests of the keel-odoo layer recipe (handbook decision 0059), on the
+# Forgejo runners of Keel-Linux (decision 0056). Each call of a reusable
+# workflow has a runs-on line, because Forgejo runs a called workflow on
+# the runner of the caller.
+#   tests:     the shell this layer writes under bats and kcov
+#              (tests/coverage.sh), with the threshold committed here
+#   python:    the first boot hook and the follow script (overlay/usr/lib)
+#              under pytest and coverage, lines and branches
+#   stack:     keel-web's real sites, the include directory and the route of
+#              this layer, on a booted trixie container with two stub
+#              servers on the ports of Odoo (tests/stack.bats)
+#   appliance: fetch the published layer, verify it, assemble it, boot it
+#              in LXC and run tests/boot-test.sh against it
+#   package:   a change that the layer ships needs a changelog entry
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    # Two shell files at 100 percent (COVERAGE.md). The threshold is the
+    # measured number and is only ever raised (decision 0006).
+    runs-on: keel-host
+    uses: keel-linux/.github/.github/workflows/test-shell.yml@main
+    with:
+      threshold: 100
+  python:
+    # The hook odoo.py and the script follow.py: 100 percent of lines and
+    # branches, measured on 2026-10-18. passlib is not needed: the tests give
+    # the hook a fake.
+    runs-on: keel-host
+    uses: keel-linux/.github/.github/workflows/test-python.yml@main
+    with:
+      threshold: 100
+      package: overlay/usr/lib
+      tests: tests/python
+  stack:
+    # keel-web's two sites are fetched from the GitHub mirror (decision
+    # 0056): the containers of the runner do not reach git.pop.coop.
+    runs-on: keel-lxc
+    uses: keel-linux/.github/.github/workflows/lxc-trixie.yml@main
+    with:
+      systemd: true
+      timeout: 30
+      run: |
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends \
+          ca-certificates git bats curl iproute2 procps nginx openssl python3
+        git init -q /tmp/keel-web
+        git -C /tmp/keel-web fetch -q --depth 1 https://github.com/Keel-Linux/keel-web.git master
+        git -C /tmp/keel-web checkout -q FETCH_HEAD
+        KEEL_ODOO_STACK_TEST=1 KEEL_WEB_SRC=/tmp/keel-web bats tests/stack.bats
+  appliance:
+    # The boot test (org-plan section 1): the odoo layer is fetched from
+    # https://mirror.keellinux.org/layers with lnpp, web and core under it,
+    # verified, assembled, booted in LXC and checked by tests/boot-test.sh.
+    # The odoo layer is not published yet: its first images are testing
+    # pre-releases (decision 0052, section 8), which never reach the
+    # mirror. So allow_unpublished is true, and the workflow makes it an
+    # error once the mirror answers for odoo. The image build per merge
+    # (decision 0061) boots every image with this same test.
+    if: vars.KEEL_LXC_RUNNER == 'true'
+    runs-on: keel-lxc
+    uses: keel-linux/.github/.github/workflows/test-appliance.yml@main
+    with:
+      appliance: odoo
+      parent: lnpp
+      allow_unpublished: true
+      timeout: 60
+  package:
+    # Only on a pull request: require-changelog compares the two commits of
+    # the pull request. What bt-layer records in the manifest is the top
+    # entry of ./changelog, so that is the file a change which ships has to
+    # bump.
+    if: github.event_name == 'pull_request'
+    runs-on: keel-host
+    uses: keel-linux/.github/.github/workflows/require-changelog.yml@main
+    with:
+      changelog: changelog
+      exempt: '^(tests/|docs/|\.github/|\.forgejo/|keel/|README|COVERAGE\.md|LICENSE|\.gitignore)'
