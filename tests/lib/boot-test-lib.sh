@@ -528,7 +528,8 @@ bt_odoo_pdf_verdict() {
         echo "boot-test: the report has no body text" >&2
         return 1
     fi
-    if ! grep -qE 'Page +1 +/ +1' <<< "$text"; then
+    # the extractor puts the words of the footer on one line or on four
+    if ! tr -s '[:space:]' ' ' <<< "$text" | grep -qE 'Page 1 / 1'; then
         echo "boot-test: the report has no page number: the footer did not print" >&2
         return 1
     fi

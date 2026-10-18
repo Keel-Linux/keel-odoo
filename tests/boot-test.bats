@@ -564,6 +564,12 @@ PDF_TEXT=$'Keel PDF test\nMy Company\nMarker KEEL-BODY-TEXT\nMy Company\n Page 1
     [[ $output == *"the report printed as PDF with its header and footer"* ]]
 }
 
+@test "odoo_pdf_verdict: the footer on separate lines is the same footer" {
+    # with the style sheets loaded (report.url) the text of the footer comes out one word to a line
+    run bt_odoo_pdf_verdict $'Keel PDF test\nMarker KEEL-BODY-TEXT\nMy Company\nPage\n1\n/\n1'
+    [ "$status" -eq 0 ]
+}
+
 @test "odoo_pdf_verdict: a PDF without the footer fails" {
     run bt_odoo_pdf_verdict $'Keel PDF test\nMarker KEEL-BODY-TEXT'
     [ "$status" -eq 1 ]

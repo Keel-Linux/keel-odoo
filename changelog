@@ -1,3 +1,12 @@
+keel-odoo-19.0 (6) keel; urgency=low
+
+  * The boot test reads the footer of the printed report when its words are
+    on separate lines. With the style sheets loaded (report.url) the text
+    of the footer comes out one word to a line, and the gate refused a good
+    footer (19.0 (5)).
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sun, 18 Oct 2026 20:00:00 +0000
+
 keel-odoo-19.0 (5) keel; urgency=low
 
   * The boot test sends an Origin header with the websocket handshake, over
