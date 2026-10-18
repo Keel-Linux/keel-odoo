@@ -41,7 +41,11 @@ install -d -o odoo -g odoo -m 0750 /var/lib/odoo
 chown root:odoo "$CONF"
 chmod 0640 "$CONF"
 
-systemctl start postgresql
+# The layers below removed the snake oil certificate that postgresql.conf
+# names (the first boot makes the certificate), so the server starts here
+# with TLS off, for this build step alone. The unix socket needs no TLS.
+PGVER="$(ls /etc/postgresql/)"
+pg_ctlcluster "$PGVER" main start -o "-c ssl=off"
 
 su postgres -c "createuser --no-superuser --createdb --no-createrole odoo"
 su postgres -c "createdb --owner odoo --encoding UTF8 --template template0 odoo"
@@ -64,7 +68,7 @@ echo "env['ir.attachment'].force_storage(); env.cr.commit()" \
 # The files that the installation left are orphans now.
 rm -rf /var/lib/odoo/filestore /var/lib/odoo/sessions
 
-systemctl stop postgresql
+pg_ctlcluster "$PGVER" main stop
 
 # The timer starts Odoo on the node whose PostgreSQL is writable. The unit
 # has no Install section, and the preset names it as disabled.
