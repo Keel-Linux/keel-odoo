@@ -13,8 +13,8 @@
 # - wkhtmltopdf is the build with patched qt: reports print with headers and
 #   footers.
 # - The Anubis snippet passes the Upgrade header (keel-overlay-anubis 0.1.1).
-# - keel is 0.23.48 or newer (the promotion of a standby whose stream ended
-#   inside a WAL record, keel#215).
+# - keel is 0.23.49 or newer (the promotion of a standby whose stream ended
+#   inside a WAL record, keel#215, and the fast stop of PostgreSQL, keel#219).
 # - The front site takes uploads and the Coraza rules take the JSON-RPC
 #   calls of Odoo.
 # - The Nginx route is in keel-web's include directory.
@@ -80,14 +80,16 @@ elif ! "$root$WKHTMLTOPDF" --version 2>/dev/null | grep -q 'with patched qt'; th
 fi
 
 # keel 0.23.48 ends the drain of a promotion 2 s after a cut that ended the
-# stream inside a record. Older keel waits minutes (keel#215).
-KEEL_MIN=0.23.48
+# stream inside a record (keel#215). keel 0.23.49 stops PostgreSQL with a fast
+# shutdown, in 120 s at most: a smart shutdown waited for the idle client that
+# serve.py holds (keel#219). Older keel waits minutes or an hour.
+KEEL_MIN=0.23.49
 keel_init="$root/usr/lib/python3/dist-packages/keel/__init__.py"
 keel_version="$(sed -n 's/^FALLBACK_VERSION = "\(.*\)"$/\1/p' "$keel_init" 2>/dev/null || true)"
 if [ -z "$keel_version" ]; then
     fatal "the version of keel is not in the image"
 elif [ "$(printf '%s\n%s\n' "$KEEL_MIN" "$keel_version" | sort -V | head -1)" != "$KEEL_MIN" ]; then
-    fatal "keel $keel_version is older than $KEEL_MIN: a promotion can wait minutes for a WAL record that never ends (keel#215)"
+    fatal "keel $keel_version is older than $KEEL_MIN: a promotion or a stop of PostgreSQL can wait minutes to an hour (keel#215, keel#219)"
 fi
 
 if [ ! -f "$root/etc/nginx/keel-front.d/60-keel-odoo.conf" ]; then
