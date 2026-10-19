@@ -1,3 +1,13 @@
+keel-odoo-19.0 (11) keel; urgency=low
+
+  * The image check fails the build if keel is older than 0.23.49. keel
+    0.23.49 stops PostgreSQL with a fast shutdown, in 120 s at most. A
+    smart shutdown waits for every client, and the idle connection that
+    serve.py keeps on a standby held a stop for the 1 h of Debian's unit
+    (keel#219). 19.0 (10) is a testing build.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Mon, 19 Oct 2026 08:00:00 +0000
+
 keel-odoo-19.0 (10) keel; urgency=low
 
   * The image check fails the build if keel is older than 0.23.48. keel
