@@ -136,6 +136,15 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     grep -qx "gevent_port = 8072" "$CONF"
 }
 
+# Attachments are in the database and a commit waits for the synchronous
+# standby (0054). Over a link of 250 ms and 1.5 % loss an upload of 4 MiB
+# needs more than 120 s, and Odoo killed the worker at its default limit
+# ("WorkerHTTP timeout after 120s"), so the front answered 413 after 123 s.
+@test "odoo.conf: a worker may run as long as the front and the route wait" {
+    grep -qx "limit_time_real = 720" "$CONF"
+    grep -q 'proxy_read_timeout 720s;' "$ROUTE"
+}
+
 @test "odoo.conf: nothing writes into /opt" {
     grep -qx "data_dir = /var/lib/odoo" "$CONF"
     grep -qx "addons_path = /opt/odoo/18.0/addons,/opt/odoo/extra-addons" "$CONF"

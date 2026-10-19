@@ -1,3 +1,14 @@
+keel-odoo-19.0 (9) keel; urgency=low
+
+  * A worker of Odoo may run 720 s of real time (limit_time_real in
+    odoo.conf), as the front and the route wait. The default is 120 s. Over
+    a link of 250 ms and 1.5 % loss the commit of an attachment waits for
+    the synchronous standby, and Odoo killed the worker ("WorkerHTTP timeout
+    after 120s") of an upload of 4 MiB, so the front answered 413 after
+    123 s. 19.0 (8) is a testing build.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Mon, 19 Oct 2026 01:00:00 +0000
+
 keel-odoo-19.0 (8) keel; urgency=low
 
   * The front site waits 720 s for Anubis (proxy_read_timeout and
