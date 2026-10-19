@@ -24,6 +24,8 @@ setup() {
     ln -s /usr/lib/systemd/system/odoo.service \
         "$T/etc/systemd/system/multi-user.target.wants/odoo.service"
     : > "$T/usr/lib/keel-odoo/serve.py"
+    mkdir -p "$T/usr/lib/python3/dist-packages/keel"
+    printf 'FALLBACK_VERSION = "0.23.48"\n' > "$T/usr/lib/python3/dist-packages/keel/__init__.py"
     printf '#!/bin/sh\necho "wkhtmltopdf 0.12.6.1 (with patched qt)"\n' > "$T/usr/local/bin/wkhtmltopdf"
     chmod +x "$T/usr/local/bin/wkhtmltopdf"
     : > "$T/opt/odoo/18.0/odoo-bin" && chmod +x "$T/opt/odoo/18.0/odoo-bin"
@@ -153,6 +155,26 @@ setup() {
     run "$CHECK"
     [ "$status" -eq 1 ]
     [[ "$output" == *"does not pass the Upgrade header"* ]]
+}
+
+@test "a keel older than 0.23.48 fails the build: the promotion could wait for a record that never ends" {
+    printf 'FALLBACK_VERSION = "0.23.47"\n' > "$T/usr/lib/python3/dist-packages/keel/__init__.py"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"keel 0.23.47 is older than 0.23.48"* ]]
+}
+
+@test "a newer keel passes, with the version compared as numbers" {
+    printf 'FALLBACK_VERSION = "0.23.100"\n' > "$T/usr/lib/python3/dist-packages/keel/__init__.py"
+    run "$CHECK"
+    [ "$status" -eq 0 ]
+}
+
+@test "no keel package fails the build" {
+    rm "$T/usr/lib/python3/dist-packages/keel/__init__.py"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"the version of keel is not in the image"* ]]
 }
 
 @test "a missing rule file fails the build" {

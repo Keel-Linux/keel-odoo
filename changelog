@@ -1,3 +1,12 @@
+keel-odoo-19.0 (10) keel; urgency=low
+
+  * The image check fails the build if keel is older than 0.23.48. keel
+    0.23.48 ends the drain of a promotion 2 s after a cut that ended the
+    stream inside a WAL record (keel#215); before, the standby waited 600 s
+    at most, and keel 0.23.46 waited 5 s. 19.0 (9) is a testing build.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Mon, 19 Oct 2026 03:30:00 +0000
+
 keel-odoo-19.0 (9) keel; urgency=low
 
   * A worker of Odoo may run 720 s of real time (limit_time_real in
