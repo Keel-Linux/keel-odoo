@@ -17,6 +17,10 @@ spec.
   its header and footer (`lib/odoo-pdf.py`) (the bundles are attachments, stored in the database). The
   image build per merge (decision 0061) runs it.
 - `layer.bats`: the files of the overlay, with grep.
+- `manifest.bats`, `lib/manifest-root.sh`: the state the manifest replicates
+  (0050), and keel's own validator when `KEEL_SRC` names a checkout of keel
+  and `KEEL_MANIFEST_SOURCES` names the checkouts of keel-core, keel-web,
+  keel-lnpp and common.
 - `image-check.bats`: `conf.d/zz-check` against a scratch tree named by
   `KEEL_CONF_ROOT`: a good tree, then each defect alone.
 - `python/`: the first boot hook and `serve.py` under pytest.

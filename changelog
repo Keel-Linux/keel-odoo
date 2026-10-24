@@ -1,3 +1,16 @@
+keel-odoo-19.0 (12) keel; urgency=low
+
+  * The appliance manifest declares the state it replicates (handbook
+    decision 0050, amendment of 2026-10-20): the filestore under the
+    data_dir of /etc/odoo/odoo.conf and the run-time addons path of
+    addons_path, one Syncthing folder per path on a database pair.
+    /var/lib/odoo/sessions is inside neither path and replicates nowhere
+    (rule 23 of docs/manifest-v1.md). tests/manifest.bats validates the
+    manifest with keel's own validator; the mechanism is
+    Keel-Linux/keel#221.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sat, 24 Oct 2026 12:00:00 +0000
+
 keel-odoo-19.0 (11) keel; urgency=low
 
   * The image check fails the build if keel is older than 0.23.49. keel
