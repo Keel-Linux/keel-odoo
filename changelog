@@ -1,3 +1,12 @@
+keel-odoo-19.0 (13) keel; urgency=low
+
+  * The build validates the appliance manifest with `keel manifest validate
+    odoo`, resolved along lnpp, web and core on the build tree, as the
+    WordPress layer does: a manifest the booted machine would refuse fails
+    the build. The check is pinned in tests/layer.bats.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sat, 24 Oct 2026 12:00:00 +0000
+
 keel-odoo-19.0 (12) keel; urgency=low
 
   * The appliance manifest declares the state it replicates (handbook
