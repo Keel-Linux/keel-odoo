@@ -136,3 +136,8 @@ FRONT=/etc/nginx/keel-front.d/60-keel-odoo.conf
 [ -f "$FRONT" ]
 grep -qxF '	include /etc/nginx/keel-front.d/*.conf;' /etc/nginx/sites-available/default-anubis \
     || { echo "the front site of keel-web does not include keel-front.d: keel-web 0.3.2 is the least" >&2; exit 1; }
+
+# The appliance manifest, validated and resolved along lnpp, web and core on
+# this very tree, so a manifest the booted machine would refuse fails the
+# build (the same line the WordPress layer ships).
+keel manifest validate odoo

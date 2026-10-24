@@ -279,3 +279,7 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     run ! grep -q 'keel-odoo-follow' conf.d/main
     grep -q 'keel-front.d/\*.conf' conf.d/main
 }
+
+@test "build: the manifest is validated along the chain, so one the booted machine would refuse fails the build" {
+    grep -qx 'keel manifest validate odoo' conf.d/main
+}
