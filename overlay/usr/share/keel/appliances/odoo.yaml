@@ -9,3 +9,15 @@ base: lnpp
 # PostgreSQL is writable, and usr/lib/keel-odoo/follow.py starts and stops
 # it, so a manifest process would make Monit start Odoo on a standby. Odoo
 # listens on the loopback, so the firewall has nothing to add.
+#
+# state: the paths Odoo writes at run time (0050's amendment of
+# 2026-10-20, item 2, and docs/manifest-v1.md). On a database pair one
+# Syncthing folder replicates each, send-only on the primary and
+# receive-only on the replica. /var/lib/odoo/sessions is inside neither
+# path, so it replicates nowhere and needs no exclude (rule 23 of
+# docs/manifest-v1.md): sessions are files of one node and are not state
+# to move.
+state:
+  replicate:
+    - /var/lib/odoo/filestore
+    - /opt/odoo/extra-addons

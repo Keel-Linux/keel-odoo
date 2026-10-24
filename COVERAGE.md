@@ -13,6 +13,7 @@ LXC as the acceptance test of a recipe).
 | conf.d/zz-check | tests/image-check.bats | 100 percent, kcov | every defect alone, and all reported |
 | tests/lib/boot-test-lib.sh | tests/boot-test.bats | 100 percent, kcov | with the verdicts of the Odoo login, the websocket and the PDF |
 | The files of the overlay | tests/layer.bats | grep | the manifest, the units, the preset, the route, odoo.conf |
+| `overlay/usr/share/keel/appliances/odoo.yaml` | `tests/manifest.bats` (8 tests) | grep and keel validate | the state it replicates (0050), against odoo.conf; keel validates it and the three example specs when `KEEL_SRC` names a checkout of keel |
 | Nginx with keel-web's sites | tests/stack.bats | integration | the job `stack`: nginx -t, the routes, the websocket headers, https behind Anubis |
 | conf.d/main | the build | integration only | build time script |
 | firstboot.d/45odoo | the boot test | integration only | three lines that call odoo.py |
