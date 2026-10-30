@@ -5,6 +5,16 @@ keel-odoo-19.0 (13) keel; urgency=low
     WordPress layer does: a manifest the booted machine would refuse fails
     the build. The check is pinned in tests/layer.bats.
 
+  * Stable 1 refresh of 2026-10-30 (decision 0073). The image is built again
+    from the pool stable-1 (apt#88) with the Debian security fixes of
+    2026-10-30: nginx (DSA-6575), bind9 (DSA-6576), php8.4 (DSA-6574),
+    imagemagick (DSA-6593), libheif (DSA-6583), brotli (DSA-6582),
+    ca-certificates (DSA-6572) and tzdata 2026f. It carries keel 0.23.67: a
+    MariaDB primary does not accept a write before its replica connects
+    (keel#242), and the manifest adds state.replicate of a base to that of
+    the application (keel#246). It also carries inithooks 2.3.6+keel35 and
+    confconsole 2.2.3+keel19.
+
  -- KeelLinux maintainers <admin@keellinux.org>  Sat, 24 Oct 2026 12:00:00 +0000
 
 keel-odoo-19.0 (12) keel; urgency=low
