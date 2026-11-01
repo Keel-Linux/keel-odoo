@@ -1,0 +1,81 @@
+# The node B of an Odoo pair (handbook decisions 0049, 0054 and 0059), the
+# replica. The node A is keel/instance.pair.example.yaml. Boot this node after
+# the primary is in the mesh, because the address of the primary is known only
+# then. Then: keel mesh invite on a member, keel mesh join here, keel vip pair,
+# as docs/replication-postgresql.md of the keel repository says. The addresses
+# are examples from the documentation prefix of the overlay.
+version: 1
+
+instance:
+  hostname: odoo-b
+  fqdn: odoo-b.example.org
+
+network:
+  managed_by: host
+  interfaces:
+    eth0:
+      ipv6:
+        method: auto
+  # this node's side of the mesh; keel mesh join writes the peers
+  overlay:
+    wireguard:
+      interface: wg0
+      address: fd2a:9c41:7e03::2/64
+      listen_port: 51820
+      peers: []
+
+tls:
+  acme:
+    enabled: false
+
+secrets:
+  root_password:
+    file: /etc/keel/secrets/root_password
+  # the pair holds one value (the manifest says shared: true)
+  db_password:
+    file: /etc/keel/secrets/db_password
+  # both nodes get the same value; the password hash differs by node, the password does not
+  app_password:
+    file: /etc/keel/secrets/app_password
+
+appliance:
+  name: odoo
+  vip: fd2a:9c41:7e03::ffff:1   # in the overlay's VIP range, no region's
+
+installation:
+  mode: cloud_simple
+
+overlays:
+  installer: enabled
+  wireguard: enabled
+  etcd: disabled
+  crowdsec: enabled
+  vip: enabled
+  nginx: enabled
+  coraza: enabled
+  anubis: enabled
+
+database:
+  server:
+    engine: postgresql
+    role: replica               # the role chosen at installation (0020)
+    listen: [fd2a:9c41:7e03::2, "::1", 127.0.0.1]
+    # where this node replicates from before it has a pair record: the overlay
+    # address of the primary, never the VIP. Without it and without a record,
+    # keel spec validate refuses this spec (keel#267). keel derives the primary
+    # when the pair record exists, so this can stay or go after keel vip pair.
+    replication:
+      primary:
+        host: fd2a:9c41:7e03::1
+
+app:
+  domain: odoo.example.org
+
+hub:
+  api_key: skip
+
+security:
+  alerts: skip
+  updates_at_first_boot: skip
+
+first_login_wizard: false

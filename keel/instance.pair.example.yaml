@@ -1,7 +1,9 @@
 # The node A of an Odoo pair (handbook decisions 0049, 0054 and 0059):
 # PostgreSQL replicated to a node B on the WireGuard mesh, the primary
-# holding the VIP. Node B has the same file with role: replica and its own
-# hostname and overlay address. The mesh comes first (keel mesh create on
+# holding the VIP. Node B has its own file:
+# keel/instance.pair-replica.example.yaml. It is not this file with only the
+# role changed, because a replica with no pair record must name its primary.
+# The mesh comes first (keel mesh create on
 # A, keel mesh invite and keel mesh join for B), then keel vip pair, as
 # docs/replication-postgresql.md of the keel repository says. The
 # addresses are examples from the documentation prefix of the overlay.

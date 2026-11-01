@@ -64,10 +64,26 @@ print(eval(sys.argv[2]))' "$MANIFEST" "$1"
     [ -n "${KEEL_SRC:-}" ] || skip "KEEL_SRC is not set"
     run "$REPO/tests/lib/manifest-root.sh" "$BATS_TEST_TMPDIR/root" "$MANIFEST"
     [ "$status" -eq 0 ]
-    for spec in keel/instance.example.yaml keel/instance.pair.example.yaml tests/instance.yaml; do
+    for spec in keel/instance.example.yaml keel/instance.pair.example.yaml keel/instance.pair-replica.example.yaml tests/instance.yaml; do
         run env PYTHONPATH="$KEEL_SRC" python3 -m keel spec validate --spec "$REPO/$spec" \
             --no-secret-files --root "$BATS_TEST_TMPDIR/root"
         echo "$spec: $output"
         [ "$status" -eq 0 ]
     done
+}
+
+# A replica with a VIP and no pair record must name its primary (keel#267): the
+# first test on real nodes copied the primary's spec, and the site stayed at 503.
+@test "manifest: the replica example names the overlay address of the primary" {
+    run python3 -c 'import sys, yaml
+a, b = (yaml.safe_load(open(p)) for p in sys.argv[1:3])
+own = a["network"]["overlay"]["wireguard"]["address"].split("/")[0]
+server = b["database"]["server"]
+assert a["database"]["server"]["role"] == "primary"
+assert server["role"] == "replica"
+assert a["appliance"]["vip"] == b["appliance"]["vip"]
+assert own != b["network"]["overlay"]["wireguard"]["address"].split("/")[0]
+sys.exit(0 if server["replication"]["primary"]["host"] == own else 1)' \
+        "$REPO/keel/instance.pair.example.yaml" "$REPO/keel/instance.pair-replica.example.yaml"
+    [ "$status" -eq 0 ]
 }
