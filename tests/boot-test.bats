@@ -558,6 +558,20 @@ LOGIN_OK=$'HTTP/1.1 303 SEE OTHER\r\nLocation: /odoo\r\nSet-Cookie: session_id=a
 
 PDF_TEXT=$'Keel PDF test\nMy Company\nMarker KEEL-BODY-TEXT\nMy Company\n Page 1  / 1'
 
+@test "odoo_filestore_verdict: the directory of odoo, mode 750, passes" {
+    run bt_odoo_filestore_verdict "odoo:odoo 750"
+    [ "$status" -eq 0 ]
+    [[ $output == *"/var/lib/odoo/filestore is odoo:odoo 750"* ]]
+}
+
+@test "odoo_filestore_verdict: another owner, another mode or no directory fails" {
+    for found in "root:root 755" "odoo:odoo 755" ""; do
+        run bt_odoo_filestore_verdict "$found"
+        [ "$status" -eq 1 ]
+        [[ $output == *"Syncthing puts its folder in error"* ]]
+    done
+}
+
 @test "odoo_pdf_verdict: the body, the header and the page number are in the PDF" {
     run bt_odoo_pdf_verdict "$PDF_TEXT"
     [ "$status" -eq 0 ]

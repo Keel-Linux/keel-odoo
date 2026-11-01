@@ -33,14 +33,57 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../overlay/etc/odoo/odoo.conf" "$T/etc/odoo/"
     cp "$BATS_TEST_DIRNAME/../overlay/etc/nginx/keel-default.d/60-keel-odoo.conf" \
         "$T/etc/nginx/keel-default.d/"
-    for name in core web lnpp odoo; do : > "$T/usr/share/keel/appliances/$name.yaml"; done
-    printf 'root:x:0:0:root:/root:/bin/bash\nodoo:x:998:998::/var/lib/odoo:/usr/sbin/nologin\n' > "$T/etc/passwd"
+    for name in core web lnpp; do : > "$T/usr/share/keel/appliances/$name.yaml"; done
+    cp "$BATS_TEST_DIRNAME/../overlay/usr/share/keel/appliances/odoo.yaml" "$T/usr/share/keel/appliances/"
+    # The tree has the owner that runs the test, so the odoo user of the tree
+    # has that number: a test does not need root to give a file to a user.
+    printf 'root:x:0:0:root:/root:/bin/bash\nodoo:x:%s:%s::/var/lib/odoo:/usr/sbin/nologin\n' \
+        "$(id -u)" "$(id -g)" > "$T/etc/passwd"
+    mkdir -p "$T/var/lib/odoo/filestore" "$T/opt/odoo/extra-addons"
+    chmod 0750 "$T/var/lib/odoo/filestore"
 }
 
 @test "a good tree passes" {
     run "$CHECK"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+}
+
+# Syncthing puts a folder whose path is missing in error, until someone makes
+# the directory and restarts Syncthing (the test of keel 0.23.68 on 2026-11-01).
+@test "no filestore fails the build" {
+    rmdir "$T/var/lib/odoo/filestore"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/var/lib/odoo/filestore is declared in state.replicate and is not a directory"* ]]
+}
+
+@test "every path the manifest replicates is checked, not only the filestore" {
+    rmdir "$T/opt/odoo/extra-addons"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/opt/odoo/extra-addons is declared in state.replicate"* ]]
+}
+
+@test "a manifest that replicates nothing fails the build, so the check cannot pass on nothing" {
+    : > "$T/usr/share/keel/appliances/odoo.yaml"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"declares no state.replicate path"* ]]
+}
+
+@test "a filestore with a mode that is not 0750 fails the build" {
+    chmod 0755 "$T/var/lib/odoo/filestore"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/var/lib/odoo/filestore is"*"755"*"not odoo:odoo 0750"* ]]
+}
+
+@test "a filestore that odoo does not own fails the build" {
+    printf 'odoo:x:%s:%s::/var/lib/odoo:/usr/sbin/nologin\n' "$(($(id -u) + 1))" "$(id -g)" > "$T/etc/passwd"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"not odoo:odoo 0750"* ]]
 }
 
 @test "Apache in the image fails the build" {

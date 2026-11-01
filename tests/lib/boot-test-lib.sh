@@ -515,6 +515,18 @@ bt_odoo_websocket_verdict() {
     return 1
 }
 
+bt_odoo_filestore_verdict() {
+    # bt_odoo_filestore_verdict FOUND: `stat -c '%U:%G %a'` of the filestore
+    # on the machine. It is a path of state.replicate.
+    local found=${1-}
+    if [ "$found" = "odoo:odoo 750" ]; then
+        echo "boot-test: /var/lib/odoo/filestore is odoo:odoo 750"
+        return 0
+    fi
+    echo "boot-test: /var/lib/odoo/filestore is '$found', not odoo:odoo 750: Syncthing puts its folder in error" >&2
+    return 1
+}
+
 bt_odoo_pdf_verdict() {
     # bt_odoo_pdf_verdict TEXT: the text of a report that Odoo printed with
     # wkhtmltopdf (tests/lib/odoo-pdf.py). A build of wkhtmltopdf without

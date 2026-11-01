@@ -162,6 +162,10 @@ bt_wait_for "$BT_TIMEOUT" "$BT_INTERVAL" "the check page on https://[$addr]/keel
     check_page_answers || true
 bt_check_page_verdict "$page" "$(lxc attach -- hostname)"
 
+# The filestore is a path of state.replicate. Syncthing needs the directory
+# before the first attachment that goes to a file.
+bt_odoo_filestore_verdict "$(lxc attach -- stat -c '%U:%G %a' /var/lib/odoo/filestore 2>/dev/null || true)"
+
 # Odoo (decision 0059, step 6). Nginx proxies /web/login to Odoo on the
 # loopback. serve.py starts Odoo when the first boot has ended
 # and PostgreSQL accepts writes, so the page can need some seconds. Then the

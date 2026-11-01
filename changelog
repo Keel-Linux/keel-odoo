@@ -1,3 +1,15 @@
+keel-odoo-19.0 (14) keel; urgency=low
+
+  * The image has /var/lib/odoo/filestore, odoo:odoo 0750. It is a path of
+    state.replicate. Before, the build removed it and nothing made it again,
+    so the Syncthing folder stayed in error until someone made the directory
+    and restarted Syncthing. The build check fails when a path of
+    state.replicate is not a directory of the image, or when the filestore has
+    another owner or mode. The boot test checks the owner and the mode on the
+    booted machine.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sun, 01 Nov 2026 12:00:00 +0000
+
 keel-odoo-19.0 (13) keel; urgency=low
 
   * The build validates the appliance manifest with `keel manifest validate

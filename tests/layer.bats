@@ -145,6 +145,15 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     grep -q 'proxy_read_timeout 720s;' "$ROUTE"
 }
 
+# The build removes the files that its installation left. The directory comes
+# back after that, or Syncthing has no folder path on a first boot.
+@test "the build makes the filestore again after it removes the orphans" {
+    local main="$BATS_TEST_DIRNAME/../conf.d/main" removed made
+    removed=$(grep -n '^rm -rf /var/lib/odoo/filestore ' "$main" | cut -d: -f1)
+    made=$(grep -n '^install -d -o odoo -g odoo -m 0750 /var/lib/odoo/filestore$' "$main" | cut -d: -f1)
+    [ -n "$removed" ] && [ -n "$made" ] && [ "$made" -gt "$removed" ]
+}
+
 @test "odoo.conf: nothing writes into /opt" {
     grep -qx "data_dir = /var/lib/odoo" "$CONF"
     grep -qx "addons_path = /opt/odoo/18.0/addons,/opt/odoo/extra-addons" "$CONF"

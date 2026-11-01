@@ -19,6 +19,9 @@
 #   calls of Odoo.
 # - The Nginx route is in keel-web's include directory.
 # - odoo.yaml is the one appliance manifest that no other is built on.
+# - Each path of state.replicate in the manifest is a directory of the image,
+#   and the filestore is odoo:odoo 0750: Syncthing puts a folder whose path is
+#   missing in error.
 #
 # KEEL_CONF_ROOT is the tree to work on, empty (the chroot's /) in a build;
 # tests/image-check.bats sets it to a scratch tree.
@@ -111,6 +114,24 @@ fi
 if [ ! -f "$root$APPLIANCES/odoo.yaml" ]; then
     fatal "$APPLIANCES/odoo.yaml is not in the image"
 fi
+replicate=$(sed -n '/^  replicate:/,/^\(  \)\{0,1\}[a-z]/{s/^    - //p}' "$root$APPLIANCES/odoo.yaml" 2>/dev/null || true)
+if [ -z "$replicate" ]; then
+    fatal "$APPLIANCES/odoo.yaml declares no state.replicate path: the check has nothing to look at"
+fi
+for path in $replicate; do
+    if [ ! -d "$root$path" ]; then
+        fatal "$path is declared in state.replicate and is not a directory of the image: Syncthing would put its folder in error"
+    fi
+done
+FILESTORE=/var/lib/odoo/filestore
+if [ -d "$root$FILESTORE" ]; then
+    wanted="$(cut -d: -f3,4 <<< "$user") 750"
+    found="$(stat -c '%u:%g %a' "$root$FILESTORE")"
+    if [ "$found" != "$wanted" ]; then
+        fatal "$FILESTORE is $found, not odoo:odoo 0750 ($wanted)"
+    fi
+fi
+
 for name in postgresql mariadb; do
     if [ -e "$root$APPLIANCES/$name.yaml" ]; then
         fatal "$APPLIANCES/$name.yaml is in the image: a second manifest, so keel inspect cannot name the appliance"

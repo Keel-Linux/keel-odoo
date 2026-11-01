@@ -121,6 +121,10 @@ ON CONFLICT (key) DO UPDATE SET value = 'http://127.0.0.1:8069';
 SQL
 # The files that the installation left are orphans now.
 rm -rf /var/lib/odoo/filestore /var/lib/odoo/sessions
+# The filestore is a path of state.replicate. Syncthing puts a folder whose
+# path is missing in error, and Odoo makes this directory only at its first
+# attachment that goes to a file. Same owner and mode as its parent.
+install -d -o odoo -g odoo -m 0750 /var/lib/odoo/filestore
 
 pg_ctlcluster "$PGVER" main stop
 trap - EXIT
