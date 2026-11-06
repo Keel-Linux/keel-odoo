@@ -1,3 +1,16 @@
+keel-odoo-19.0 (15) keel; urgency=medium
+
+  * Port 80 (keel-web 0.4.0, handbook decision 0079): behind Anubis, Odoo
+    sees the scheme that the front sets in X-Forwarded-Proto: http on
+    port 80 while the certificate is self-signed, https otherwise. Before,
+    the socket of Anubis always said https, which assumed that port 80
+    redirects, so Odoo made https links for a page asked over http.
+  * tests/commission.yaml asks http://127.0.0.1/web/login (200) and
+    http://127.0.0.1/keel-health (204). tests/stack.bats installs
+    keel-web's snippets and checks the loopback of port 80.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Fri, 06 Nov 2026 07:00:00 +0000
+
 keel-odoo-19.0 (14) keel; urgency=medium
 
   * The commissioning test of handbook decision 0075 (a container made from

@@ -33,6 +33,13 @@ setup_file() {
     rm -f /etc/nginx/keel-default.d/50-keel-lnpp.conf
     install -D -m 0644 "$web/keel-default" /etc/nginx/sites-available/keel-default
     install -D -m 0644 "$web/default-anubis" /etc/nginx/sites-available/default-anubis
+    # keel-web 0.4.0 and later (decision 0079): the content of the sites is
+    # in snippets, which the sites include
+    local snippet
+    for snippet in "$web"/nginx/keel-web-*.conf; do
+        [ -f "$snippet" ] || continue
+        install -D -m 0644 "$snippet" "/etc/nginx/snippets/$(basename "$snippet")"
+    done
     install -D -m 0644 /dev/stdin /etc/nginx/snippets/keel-anubis.conf <<'SNIPPET'
 proxy_set_header Host $host;
 proxy_pass http://[::1]:8923;
@@ -117,8 +124,9 @@ teardown_file() {
     [ "$output" = 204 ]
 }
 
-# The loopback addresses of port 80 belong to keel-overlay-nginx's health
-# server, so these two requests go to the address of the machine.
+# These two requests go to the address of the machine: before keel-web
+# 0.4.0 the loopback addresses of port 80 belonged to keel-overlay-nginx's
+# health server.
 host_ip() {
     ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1 | head -1
 }
@@ -126,6 +134,17 @@ host_ip() {
 @test "in the simple mode Odoo sees the scheme of the request" {
     run curl -s "http://$(host_ip)/web/login"
     [[ $output == *"proto=http "* ]]
+}
+
+# keel-web 0.4.0 (decision 0079): the loopback of port 80 is the site's,
+# so a check on the machine reaches Odoo; /keel-health stays keel-web's
+@test "on the loopback of port 80 Odoo answers, and /keel-health 204" {
+    [ -f "$KEEL_WEB_SRC/packages/keel-web/nginx/keel-web-site.conf" ] \
+        || skip "keel-web before 0.4.0: the loopback of port 80 is the health server's"
+    run curl -s http://127.0.0.1/web/login
+    [[ $output == "port=8069 path=/web/login host=127.0.0.1 proto=http "* ]]
+    run curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/keel-health
+    [ "$output" = 204 ]
 }
 
 @test "a client cannot set the protocol that Odoo sees" {
@@ -143,6 +162,12 @@ host_ip() {
     fi
     systemctl reload nginx
     run curl -s --unix-socket /run/nginx/keel-app.sock http://odoo.test/web/login
+    [[ $output == "port=8069 path=/web/login host=odoo.test proto=https "* ]]
+    # the front's X-Forwarded-Proto: http on port 80 (decision 0079), https
+    # for anything else
+    run curl -s --unix-socket /run/nginx/keel-app.sock -H 'X-Forwarded-Proto: http' http://odoo.test/web/login
+    [[ $output == "port=8069 path=/web/login host=odoo.test proto=http "* ]]
+    run curl -s --unix-socket /run/nginx/keel-app.sock -H 'X-Forwarded-Proto: gopher' http://odoo.test/web/login
     [[ $output == "port=8069 path=/web/login host=odoo.test proto=https "* ]]
     run curl -s --unix-socket /run/nginx/keel-app.sock -H 'Connection: Upgrade' -H 'Upgrade: websocket' http://odoo.test/websocket
     [[ $output == "port=8072 path=/websocket "* ]]

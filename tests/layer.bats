@@ -108,10 +108,15 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     grep -q 'proxy_set_header Connection \$keel_odoo_connection;' "$ROUTE"
 }
 
-@test "route: the protocol that Odoo sees is https behind the socket of Anubis" {
+# keel-web 0.4.0 (decision 0079): port 80 goes through Anubis while the
+# certificate is self-signed, so the socket takes the front's
+# X-Forwarded-Proto: http for http, https for anything else
+@test "route: behind the socket of Anubis, Odoo sees the front's scheme, https unless it is http" {
     grep -q 'proxy_set_header X-Forwarded-Proto \$keel_odoo_proto;' "$ROUTE"
     grep -q 'default \$scheme;' "$MAP"
-    grep -q '~^unix: https;' "$MAP"
+    grep -q '~^unix: \$keel_odoo_front_proto;' "$MAP"
+    run awk '/map \$http_x_forwarded_proto \$keel_odoo_front_proto/,/}/' "$MAP"
+    [[ "$output" == *$'\tdefault https;\n\thttp http;\n}'* ]]
 }
 
 @test "route: the map for the websocket header" {

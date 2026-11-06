@@ -79,6 +79,11 @@ proofs:
 services: [nginx, postgresql, odoo, webmin, cron, postfix, ssh]
 urls:
   - {url: 'https://127.0.0.1/web/login', status: 200}
+  # port 80 of the loopback is keel-default's (keel-web 0.4.0, handbook
+  # decision 0079): with the self-signed certificate of the first boot it
+  # serves Odoo as 443 does, with no redirect; /keel-health stays 204
+  - {url: 'http://127.0.0.1/web/login', status: 200}
+  - {url: 'http://127.0.0.1/keel-health', status: 204}
   - {url: 'https://127.0.0.1:12321/', status: 200}
 # The stack check of lnpp is not part of the Odoo product: its first boot
 # hook makes a test database, keel_check, and its page /keel-check/ shows
