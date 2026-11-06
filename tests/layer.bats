@@ -251,7 +251,7 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 }
 
 @test "services screen: the Odoo address, and no check page, which the image does not have" {
-    run grep -c "Odoo:" "$OVERLAY/etc/confconsole/services.txt"
+    run grep -c "Odoo 18.0:" "$OVERLAY/etc/confconsole/services.txt"
     [ "$output" = 2 ]
     run ! grep -q "keel-check" "$OVERLAY/etc/confconsole/services.txt"
 }
@@ -308,4 +308,14 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 
 @test "replica: the notice says that the node is the replica" {
     grep -qF 'This node is the replica of a cloud pair.' "$OVERLAY/usr/share/keel-odoo/www/keel-odoo-replica.html"
+}
+
+@test "services screen: the Odoo version it names is the series the build checks out" {
+    # The image is named after the Keel release (19.0-N), which reads as an
+    # Odoo version: the screen names the Odoo series, and it must be the one
+    # conf.d/main writes into /opt/odoo/REVISION.
+    series=$(sed -n 's/^odoo \([0-9][0-9]*\.[0-9]\)$/\1/p' conf.d/main)
+    [ -n "$series" ]
+    run grep -c "^Odoo $series:" "$OVERLAY/etc/confconsole/services.txt"
+    [ "$output" = 2 ]
 }
