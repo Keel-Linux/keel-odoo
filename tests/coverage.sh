@@ -1,12 +1,12 @@
 #!/bin/bash
 # Line coverage of the shell this layer writes, measured with kcov over the
 # bats suite (decision 0004). The measured files are the image check
-# (conf.d/zz-check) and the logic of the boot test (tests/lib/boot-test-lib.sh).
+# (conf.d/zz-check), the first boot hook (firstboot.d/45odoo) and the logic
+# of the boot test (tests/lib/boot-test-lib.sh).
 # Exits 1 below the threshold, 2 when a tool is missing. tests/boot-test.sh is
 # the thin main that runs keel and LXC as root and is exercised by the
 # container run in test-appliance.yml, not measured here; conf.d/main is a
-# build time script and is exercised by the build; firstboot.d/45odoo is
-# three lines that call bin/odoo.py. The Python files (the first boot hook
+# build time script and is exercised by the build. The Python files (the first boot hook
 # and the follow script) are measured by the python job (tests/python).
 #
 #   tests/coverage.sh [THRESHOLD]
@@ -25,7 +25,7 @@ done
 report="${COVERAGE_DIR:-$(mktemp -d)}"
 # The include pattern is the whitelist, so no exclude pattern is needed; an
 # exclude of /tests/ would drop tests/lib/boot-test-lib.sh with it.
-kcov --include-pattern=/conf.d/zz-check,/tests/lib/boot-test-lib.sh \
+kcov --include-pattern=/conf.d/zz-check,/firstboot.d/45odoo,/tests/lib/boot-test-lib.sh \
     "$report" bats "$here"
 
 json="$(find "$report" -mindepth 2 -maxdepth 2 -name coverage.json -not -path "*/kcov-merged/*" | head -1)"

@@ -55,19 +55,54 @@ print(eval(sys.argv[2]))' "$MANIFEST" "$1"
     [ -n "${KEEL_SRC:-}" ] || skip "KEEL_SRC is not set"
     run "$REPO/tests/lib/manifest-root.sh" "$BATS_TEST_TMPDIR/root" "$MANIFEST"
     [ "$status" -eq 0 ]
-    run env PYTHONPATH="$KEEL_SRC" python3 -m keel manifest validate --root "$BATS_TEST_TMPDIR/root" odoo
+    run keel_as_root manifest validate --root "$BATS_TEST_TMPDIR/root" odoo
     echo "$output"
     [ "$status" -eq 0 ]
 }
 
-@test "manifest: the example specs and the boot test's spec hold against it" {
+@test "manifest: the example specs and the boot test's spec hold against it, with no warning" {
+    # keel 0.23.83 warned that overlays.syncthing was not declared, and
+    # refuses a spec that leaves out an overlay of the chain once one was
+    # recorded (handbook decision 0076)
     [ -n "${KEEL_SRC:-}" ] || skip "KEEL_SRC is not set"
     run "$REPO/tests/lib/manifest-root.sh" "$BATS_TEST_TMPDIR/root" "$MANIFEST"
     [ "$status" -eq 0 ]
     for spec in keel/instance.example.yaml keel/instance.pair.example.yaml tests/instance.yaml; do
-        run env PYTHONPATH="$KEEL_SRC" python3 -m keel spec validate --spec "$REPO/$spec" \
+        run keel_as_root spec validate --spec "$REPO/$spec" \
             --no-secret-files --root "$BATS_TEST_TMPDIR/root"
         echo "$spec: $output"
         [ "$status" -eq 0 ]
+        [[ "$output" != *Warning* ]]
     done
+}
+
+@test "manifest: the examples write out the nine overlays of Core, Web and LNPP" {
+    for spec in keel/instance.example.yaml keel/instance.pair.example.yaml; do
+        python3 - "$REPO/$spec" <<'PY'
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))
+assert sorted(d["overlays"]) == ["anubis", "coraza", "crowdsec", "etcd", "installer", "nginx", "syncthing", "vip", "wireguard"], d["overlays"]
+PY
+    done
+}
+
+@test "manifest: the commissioning contract's instance is the example's shape" {
+    python3 - "$REPO/keel/instance.example.yaml" "$REPO/tests/commission.yaml" <<'PY'
+import sys, yaml
+example = yaml.safe_load(open(sys.argv[1]))
+instance = yaml.safe_load(open(sys.argv[2]))["instance"]
+for key in ("version", "network", "tls", "appliance", "installation", "overlays", "app", "hub", "first_login_wizard"):
+    assert instance[key] == example[key], key
+assert sorted(instance["secrets"]) == sorted(example["secrets"]), "secrets"
+assert "instance" not in instance, "the machine keeps the name pct create gave it"
+PY
+}
+
+# keel_as_root ARGS...: keel from KEEL_SRC as root: keel refuses a hook
+# file that root does not own, and the scratch root is the test's own, so a
+# test that is not root runs it in a user namespace where it is root
+keel_as_root() {
+    local wrap=()
+    [ "$(id -u)" = 0 ] || wrap=(unshare -r)
+    "${wrap[@]}" env PYTHONPATH="$KEEL_SRC" python3 -m keel "$@"
 }

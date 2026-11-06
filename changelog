@@ -1,3 +1,25 @@
+keel-odoo-19.0 (14) keel; urgency=medium
+
+  * The commissioning test of handbook decision 0075 (a container made from
+    the template on BR1 and BR2, as an operator makes it) found these
+    defects, 2026-11-06:
+  * firstboot.d/45odoo failed on a headless first boot: no APP_PASS, and
+    odoo.py decided by a terminal on standard input whether it could ask,
+    which tty1 of an LXC is with nobody attached. The hook now uses
+    inithooks' rule (lib/console.sh) and leaves the question to keel-init
+    (console_deferred); Odoo stays closed until then.
+  * The check page of lnpp was in the image: its first boot hook made the
+    test database keel_check, and /keel-check/ showed the stack. conf.d/main
+    removes the hook, the route, the application and the socket;
+    conf.d/zz-check, the boot test and the services screen hold it. The
+    service unit stays, as lnpp's manifest names it, and nothing starts it.
+  * keel/instance.example.yaml and instance.pair.example.yaml declare
+    overlays.syncthing: keel 0.23.83 warned that the chain has it.
+  * tests/commission.yaml, the commissioning contract, and the CI job
+    "commission / contract" that checks it.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Fri, 06 Nov 2026 06:00:00 +0000
+
 keel-odoo-19.0 (13) keel; urgency=low
 
   * The build validates the appliance manifest with `keel manifest validate

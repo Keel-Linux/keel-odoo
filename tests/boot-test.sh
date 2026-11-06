@@ -150,17 +150,12 @@ bt_wait_for "$BT_TIMEOUT" "$BT_INTERVAL" "webmin on https://[$addr]:$BT_WEBMIN_P
     webmin_answers
 bt_webmin_verdict "$code"
 
-# The check page of decision 0059 over HTTPS: Nginx proxies /keel-check/
-# to gunicorn, which systemd starts from its socket at this first request,
-# and the page reads PostgreSQL as keel-check.
-page=""
-check_page_answers() {
-    page=$(curl -6 -k -s "https://[$addr]/keel-check/" || true)
-    [[ $page == *"Keel LNPP: the stack works"* ]]
-}
-bt_wait_for "$BT_TIMEOUT" "$BT_INTERVAL" "the check page on https://[$addr]/keel-check/" \
-    check_page_answers || true
-bt_check_page_verdict "$page" "$(lxc attach -- hostname)"
+# The check page of lnpp is not part of the Odoo product (conf.d/main
+# removes it): /keel-check/ reaches Odoo, which answers with a page of its
+# own once it serves.
+page_code=$(curl -6 -k -s -o "$container_dir/keel-check.html" -w '%{http_code}' \
+    "https://[$addr]/keel-check/" || true)
+bt_no_check_page_verdict "$page_code" "$(cat "$container_dir/keel-check.html" 2>/dev/null)"
 
 # Odoo (decision 0059, step 6). Nginx proxies /web/login to Odoo on the
 # loopback. serve.py starts Odoo when the first boot has ended

@@ -55,6 +55,7 @@ overlays:
   nginx: enabled
   coraza: enabled
   anubis: enabled
+  syncthing: enabled
 
 database:
   server:

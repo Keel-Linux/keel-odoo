@@ -4,17 +4,33 @@
 # image shares. Runs after 35pgsqlpass and 36pgsqlverify of the lnpp layer,
 # so PostgreSQL answers. Odoo is not running: serve.py serves only after
 # odoo.py has written /var/lib/keel-odoo/ready, at its end.
+#
+# With no password declared, odoo.py asks it on the console. Whether
+# anybody can answer the console is inithooks' rule (lib/console.sh), as
+# for 35pgsqlpass: a test of standard input for a terminal is not enough,
+# because tty1 of an LXC container is a terminal nobody is attached to.
+# When nobody can, the hook asks nothing and leaves the question to
+# keel-init (console_deferred): the first login starts keel-init. Odoo
+# stays closed until then, as no ready mark is written.
 
+INITHOOKS_DEFAULT="${INITHOOKS_DEFAULT:-/etc/default/inithooks}"
 # shellcheck source=/dev/null
-. /etc/default/inithooks
+. "$INITHOOKS_DEFAULT"
+# shellcheck source=/dev/null
+. "$INITHOOKS_PATH/lib/console.sh"
 
 # shellcheck source=/dev/null
 [ -e "$INITHOOKS_CONF" ] && . "$INITHOOKS_CONF"
 
+if { [ -z "${APP_PASS:-}" ] || [ "${APP_PASS^^}" = DEFAULT ]; } && console_unattended; then
+    console_deferred 45odoo "no APP_PASS: Odoo stays closed until keel-init asks it; or declare secrets.app_password in the instance description"
+    exit 0
+fi
+
 # The password goes in the environment, not in the arguments: the process
 # list shows the arguments.
 export APP_PASS
-"$INITHOOKS_PATH/bin/odoo.py" --domain="$APP_DOMAIN"
+"$INITHOOKS_PATH/bin/odoo.py" --domain="${APP_DOMAIN:-}"
 
 # A later run of the hook changes the secrets that a running Odoo has read.
 systemctl try-restart odoo.service

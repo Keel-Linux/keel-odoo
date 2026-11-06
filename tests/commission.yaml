@@ -1,0 +1,138 @@
+# The commissioning contract of keel-odoo (handbook decision 0075).
+# bin/keel-commission of Keel-Linux/.github reads it: it makes a container
+# from the template as an operator does, answers the first boot (or
+# preseeds it with the instance below), and proves each password by a
+# login with it. A new first boot question or secret is a change of this
+# file in the same pull request.
+contract: 1
+appliance: odoo
+secrets: [root, db, app]
+# The prompts are the titles that the first boot draws on tty1. A password
+# comes first as a menu of the same title (Generate or Manual), and the
+# runner takes Manual.
+questions:
+  - id: root_password
+    hook: 30rootpass
+    prompt: Root Password
+    answer: secret:root
+  - id: db_password
+    hook: 35pgsqlpass
+    prompt: PostgreSQL Password
+    answer: secret:db
+  - id: odoo_password
+    hook: 45odoo
+    prompt: Odoo password
+    answer: secret:app
+  - id: alert_email
+    hook: 85secalerts
+    prompt: System Notifications
+    answer: admin@example.org
+# keel/instance.example.yaml of this repository, with the secrets of the
+# run and no instance name: the machine keeps the name pct create gave it
+instance:
+  version: 1
+  network:
+    managed_by: host
+    interfaces:
+      eth0:
+        ipv6:
+          method: auto
+  tls:
+    acme:
+      enabled: false
+  appliance:
+    name: odoo
+  installation:
+    mode: simple
+  overlays:
+    installer: enabled
+    wireguard: disabled
+    etcd: disabled
+    crowdsec: disabled
+    vip: disabled
+    nginx: enabled
+    coraza: disabled
+    anubis: disabled
+    syncthing: disabled
+  secrets:
+    root_password: secret:root
+    db_password: secret:db
+    app_password: secret:app
+  app:
+    domain: odoo.example.org
+  hub:
+    api_key: skip
+  security:
+    alerts: admin@example.org
+    updates_at_first_boot: skip
+  first_login_wizard: false
+proofs:
+  - {secret: root, kind: shadow, user: root}
+  # the postgres role, by a TCP login: pg_hba.conf asks a password there
+  - {secret: db, kind: pgsql, user: postgres, host: 127.0.0.1, database: postgres}
+  # the Odoo admin user, by Odoo's own login over XML-RPC; the password goes
+  # from the environment, never on a command line. Odoo starts once the first
+  # boot hook has written its ready mark, so the proof waits up to 5 minutes.
+  - secret: app
+    kind: command
+    run: for i in $(seq 60); do python3 -c 'import os, sys, xmlrpc.client as x; sys.exit(0 if x.ServerProxy("http://127.0.0.1:8069/xmlrpc/2/common").authenticate("odoo", "admin", os.environ["SECRET"], {}) else 1)' 2>/dev/null && exit 0; sleep 5; done; exit 1
+services: [nginx, postgresql, odoo, webmin, cron, postfix, ssh]
+urls:
+  - {url: 'https://127.0.0.1/web/login', status: 200}
+  - {url: 'https://127.0.0.1:12321/', status: 200}
+# The stack check of lnpp is not part of the Odoo product: its first boot
+# hook makes a test database, keel_check, and its page /keel-check/ shows
+# the stack to anybody who asks.
+forbidden:
+  - {kind: pgsql-database, name: keel_check}
+  - {kind: hook, name: 40lnpp-check}
+  - {kind: path, name: /etc/nginx/keel-default.d/50-keel-lnpp.conf}
+  - {kind: path, name: /usr/share/keel-lnpp}
+  - {kind: path, name: /usr/lib/systemd/system/keel-lnpp-check.socket}
+# The web pages of the gallery (decision 0077): the Odoo login, the app
+# after the login with the app secret, and Webmin before and after the
+# login with the root secret.
+screenshots:
+  - name: odoo
+    url: /web/login
+    after: /odoo
+    login: {user_field: '#login', user: admin, password_field: '#password', secret: app, submit: 'button[type=submit]'}
+    wait: 8
+  - name: webmin
+    port: 12321
+    url: /
+    login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
+    wait: 8
+# The cloud modes (decision 0076): PostgreSQL is a replicating engine (the
+# pair of decisions 0054 and 0057), and the filestore follows the VIP. The
+# prompts are the titles of the confconsole screens. This part is declared
+# for the cloud passes; the single node passes do not read it.
+cloud:
+  capture:
+    invite: 'keel[12]:[A-Za-z0-9_.~+/=-]+'
+    vip: 'VIP:? +([0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7})'
+  checks:
+    - {id: vip-holder, at: all, run: 'keel vip status', match: 'holder', count: 1}
+    - {id: row-through-vip, at: replica, secret: db, run: 'PGPASSWORD="$SECRET" psql -h "$VIP" -U postgres -d odoo -Atc "SELECT 1"'}
+    - {id: files-follow, at: replica, run: 'keel vip status', match: 'files: from '}
+    - {id: promote, at: replica, run: 'keel vip promote'}
+    - {id: promoted-holder, at: replica, run: 'keel vip status', match: 'holder'}
+    - {id: return, at: primary, run: 'keel vip promote'}
+    - {id: returned-holder, at: primary, run: 'keel vip status', match: 'holder'}
+nodes:
+  - name: primary
+    site: br1
+    mode: cloud_simple
+    role: primary
+    answers:
+      - {id: mode, prompt: Installation mode, keys: '{down}{ret}'}
+      - {id: role, prompt: Role of this node, keys: '{ret}'}
+      - {id: invite, prompt: Invite a node, keys: '{ret}'}
+  - name: replica
+    site: br2
+    mode: cloud_simple
+    role: replica
+    answers:
+      - {id: mode, prompt: Installation mode, keys: '{down}{ret}'}
+      - {id: role, prompt: Role of this node, keys: '{down}{ret}'}
+      - {id: join, prompt: Join a mesh, keys: '{invite:1}{ret}'}

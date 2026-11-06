@@ -47,6 +47,7 @@ overlays:
   nginx: enabled
   coraza: disabled
   anubis: disabled
+  syncthing: disabled
 
 secrets:
   root_password:
