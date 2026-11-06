@@ -18,6 +18,8 @@
 # - The front site takes uploads and the Coraza rules take the JSON-RPC
 #   calls of Odoo.
 # - The Nginx route is in keel-web's include directory.
+# - The check page of lnpp (its hook, route, application and socket) is
+#   not in the image.
 # - odoo.yaml is the one appliance manifest that no other is built on.
 #
 # KEEL_CONF_ROOT is the tree to work on, empty (the chroot's /) in a build;
@@ -107,6 +109,18 @@ done
 if [ ! -f "$root/etc/nginx/keel-default.d/60-keel-odoo.conf" ]; then
     fatal "the Nginx route of Odoo is not in keel-web's include directory"
 fi
+
+# The stack check of lnpp is not part of the Odoo product: conf.d/main
+# removes it (the commissioning test found it in the image, 2026-11-06).
+for path in /usr/lib/inithooks/firstboot.d/40lnpp-check \
+        /etc/nginx/keel-default.d/50-keel-lnpp.conf \
+        /usr/share/keel-lnpp \
+        /usr/lib/systemd/system/keel-lnpp-check.socket \
+        "$WANTS/sockets.target.wants/keel-lnpp-check.socket"; do
+    if [ -e "$root$path" ] || [ -L "$root$path" ]; then
+        fatal "$path is in the image: the check page of lnpp is not part of Odoo"
+    fi
+done
 
 if [ ! -f "$root$APPLIANCES/odoo.yaml" ]; then
     fatal "$APPLIANCES/odoo.yaml is not in the image"

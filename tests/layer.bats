@@ -240,16 +240,15 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 
 @test "hook: the password goes in the environment, the domain in the arguments" {
     grep -qx 'export APP_PASS' "$HOOK"
-    grep -q 'bin/odoo.py" --domain="\$APP_DOMAIN"' "$HOOK"
+    grep -q 'bin/odoo.py" --domain="\${APP_DOMAIN:-}"' "$HOOK"
     run ! grep -q -- '--pass=' "$HOOK"
     grep -qx 'systemctl try-restart odoo.service' "$HOOK"
 }
 
-@test "services screen: the Odoo address and the check page" {
+@test "services screen: the Odoo address, and no check page, which the image does not have" {
     run grep -c "Odoo:" "$OVERLAY/etc/confconsole/services.txt"
     [ "$output" = 2 ]
-    run grep -c "keel-check" "$OVERLAY/etc/confconsole/services.txt"
-    [ "$output" = 2 ]
+    run ! grep -q "keel-check" "$OVERLAY/etc/confconsole/services.txt"
 }
 
 @test "the spec of the boot test names no appliance, because the host of the test does not know odoo" {

@@ -4,19 +4,19 @@ Standard: decisions 0003 (90 percent per repository, 95 for code the
 project writes) and 0004 (bats plus kcov for shell; a build and a boot on
 LXC as the acceptance test of a recipe).
 
-## Measured 2026-10-18
+## Measured 2026-11-06
 
 | File | Test | Coverage | Note |
 | --- | --- | --- | --- |
 | overlay/usr/lib/inithooks/bin/odoo.py | tests/python/test_odoo_hook.py | 100 percent of lines and branches, coverage.py | the first boot hook; a fake passlib and a fake psql |
 | overlay/usr/lib/keel-odoo/serve.py | tests/python/test_serve.py | 100 percent of lines and branches, coverage.py | Odoo serves on the writable node only; the process start and the signals are integration only |
-| conf.d/zz-check | tests/image-check.bats | 100 percent, kcov | every defect alone, and all reported |
-| tests/lib/boot-test-lib.sh | tests/boot-test.bats | 100 percent, kcov | with the verdicts of the Odoo login, the websocket and the PDF |
+| conf.d/zz-check | tests/image-check.bats | 100 percent (60/60), kcov | every defect alone, and all reported; no part of lnpp's check page |
+| overlay/usr/lib/inithooks/firstboot.d/45odoo | tests/hook.bats (5 tests) | 100 percent (10/10), kcov | a declared password, a headless boot that defers to keel-init, a console, a failure of odoo.py |
+| tests/lib/boot-test-lib.sh | tests/boot-test.bats | 100 percent (208/208), kcov | with the verdicts of the Odoo login, the websocket, the PDF and no check page |
 | The files of the overlay | tests/layer.bats | grep | the manifest, the units, the preset, the route, odoo.conf |
-| `overlay/usr/share/keel/appliances/odoo.yaml` | `tests/manifest.bats` (8 tests) | grep and keel validate | the state it replicates (0050), against odoo.conf; keel validates it and the three example specs when `KEEL_SRC` names a checkout of keel |
+| `overlay/usr/share/keel/appliances/odoo.yaml` | `tests/manifest.bats` (10 tests) | grep and keel validate | the state it replicates (0050), against odoo.conf; keel validates it and the three specs with no warning when `KEEL_SRC` names a checkout of keel; the contract's instance has the example's shape |
 | Nginx with keel-web's sites | tests/stack.bats | integration | the job `stack`: nginx -t, the routes, the websocket headers, https behind Anubis |
 | conf.d/main | the build | integration only | build time script |
-| firstboot.d/45odoo | the boot test | integration only | three lines that call odoo.py |
 | tests/boot-test.sh | itself | integration only | the thin main of the boot test |
 
 `tests/coverage.sh` fails below `COVERAGE_THRESHOLD`, which the workflow

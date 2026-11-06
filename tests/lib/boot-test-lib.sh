@@ -422,23 +422,21 @@ bt_diff_verdict() {
     esac
 }
 
-bt_check_page_verdict() {
-    # bt_check_page_verdict BODY HOST: the check page of decision 0059 at
-    # /keel-check/ over HTTPS shows each layer of the stack: the title,
-    # Python, PostgreSQL, a writable server, and the row the first boot of
-    # HOST wrote.
-    local body=${1-} host=${2-} want
-    for want in "Keel LNPP: the stack works" "<td>Python 3." \
-            "<td>PostgreSQL 17" "<td>writable" "<td>$host</td><td>"; do
-        if [[ $body != *"$want"* ]]; then
-            echo "boot-test: the check page does not show '$want'" >&2
-            return 1
-        fi
-    done
-    local python server
-    python=$(grep -o 'Python 3\.[0-9.]*' <<< "$body" | head -1)
-    server=$(grep -o 'PostgreSQL 17[0-9.]*' <<< "$body" | head -1)
-    echo "boot-test: the check page answers: $python, $server, writable, the row of $host"
+bt_no_check_page_verdict() {
+    # bt_no_check_page_verdict CODE BODY: the check page of lnpp is not part
+    # of the Odoo product (conf.d/main removes it), so /keel-check/ over
+    # HTTPS is no route of its own: it reaches Odoo, which answers with a
+    # page of its own. The page of lnpp, or no answer, fails.
+    local code=${1-} body=${2-}
+    if [[ $body == *"Keel LNPP: the stack works"* ]]; then
+        echo "boot-test: the check page of lnpp is in the image: /keel-check/ shows the stack (HTTP $code)" >&2
+        return 1
+    fi
+    if [[ ! $code =~ ^[1-5][0-9][0-9]$ ]]; then
+        echo "boot-test: /keel-check/ does not answer (${code:-nothing})" >&2
+        return 1
+    fi
+    echo "boot-test: no check page: /keel-check/ answers $code from Odoo"
 }
 
 bt_odoo_page_verdict() {

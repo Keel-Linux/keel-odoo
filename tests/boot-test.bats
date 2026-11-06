@@ -430,33 +430,28 @@ DEF
     [[ $output == *"failed with exit 127"* ]]
 }
 
-# the check page of decision 0059: Nginx reached Python, Python read from
-# PostgreSQL, the server is writable and the first boot wrote its row
-PAGE_OK='<h1>Keel LNPP: the stack works</h1>
-<tr><th>Host</th><td>lnpp</td></tr>
-<tr><th>Python</th><td>Python 3.13.5</td></tr>
-<tr><th>PostgreSQL</th><td>PostgreSQL 17.6 (Debian 17.6-0+deb13u1) on x86_64</td></tr>
-<tr><th>Role of the server</th><td>writable (a primary, or a standalone server)</td></tr>
-<tr><td>lnpp</td><td>2026-10-16 07:00:00+00</td></tr>'
+# the check page of lnpp is not part of the Odoo product: /keel-check/ is
+# no route of its own, so it reaches Odoo, which answers its own 404 page
+PAGE_LNPP='<h1>Keel LNPP: the stack works</h1>
+<tr><th>Host</th><td>lnpp</td></tr>'
 
-@test "check_page_verdict: the page with every layer and the row of the host passes" {
-    run bt_check_page_verdict "$PAGE_OK" lnpp
+@test "no_check_page_verdict: Odoo's own answer for /keel-check/ passes" {
+    run bt_no_check_page_verdict 404 "<title>404 | Page not found</title>"
     [ "$status" -eq 0 ]
-    [[ $output == *"the check page answers: Python 3.13.5, PostgreSQL 17.6"* ]]
+    [[ $output == *"no check page: /keel-check/ answers 404 from Odoo"* ]]
 }
 
-@test "check_page_verdict: a page without Python, PostgreSQL, the role or the row fails" {
-    for missing in "Python 3" "PostgreSQL 17" "writable" "<td>lnpp</td><td>"; do
-        run bt_check_page_verdict "${PAGE_OK//$missing/}" lnpp
-        [ "$status" -eq 1 ]
-        [[ $output == *"the check page does not show"* ]]
-    done
-}
-
-@test "check_page_verdict: a 503 or an empty answer fails" {
-    run bt_check_page_verdict "The database does not answer." lnpp
+@test "no_check_page_verdict: lnpp's check page fails, whatever the status" {
+    run bt_no_check_page_verdict 200 "$PAGE_LNPP"
     [ "$status" -eq 1 ]
-    run bt_check_page_verdict "" lnpp
+    [[ $output == *"the check page of lnpp is in the image"* ]]
+}
+
+@test "no_check_page_verdict: no answer at all fails" {
+    run bt_no_check_page_verdict 000 ""
+    [ "$status" -eq 1 ]
+    [[ $output == *"/keel-check/ does not answer (000)"* ]]
+    run bt_no_check_page_verdict "" ""
     [ "$status" -eq 1 ]
 }
 

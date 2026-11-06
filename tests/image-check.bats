@@ -212,3 +212,48 @@ setup() {
     [[ "$output" == *"odoo-bin"* ]]
     [[ "$output" == *"REVISION"* ]]
 }
+
+# The stack check of lnpp is not part of the Odoo product (BR1 and BR2,
+# 2026-11-06, the commissioning test): its first boot hook made the test
+# database keel_check, and its page /keel-check/ showed the stack to
+# anybody who asked.
+@test "the first boot hook of lnpp's check page fails the build" {
+    mkdir -p "$T/usr/lib/inithooks/firstboot.d"
+    : > "$T/usr/lib/inithooks/firstboot.d/40lnpp-check"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"40lnpp-check is in the image"* ]]
+}
+
+@test "the route of lnpp's check page fails the build" {
+    : > "$T/etc/nginx/keel-default.d/50-keel-lnpp.conf"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"50-keel-lnpp.conf is in the image"* ]]
+}
+
+@test "the application of lnpp's check page fails the build" {
+    mkdir -p "$T/usr/share/keel-lnpp/app"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/usr/share/keel-lnpp is in the image"* ]]
+}
+
+@test "the socket of lnpp's check page fails the build, and so does the socket left enabled" {
+    mkdir -p "$T/usr/lib/systemd/system" "$T/etc/systemd/system/sockets.target.wants"
+    : > "$T/usr/lib/systemd/system/keel-lnpp-check.socket"
+    ln -s /usr/lib/systemd/system/keel-lnpp-check.socket \
+        "$T/etc/systemd/system/sockets.target.wants/keel-lnpp-check.socket"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/usr/lib/systemd/system/keel-lnpp-check.socket is in the image"* ]]
+    [[ "$output" == *"sockets.target.wants/keel-lnpp-check.socket is in the image"* ]]
+}
+
+@test "the service unit of lnpp's check page passes: lnpp's manifest names it, and nothing starts it" {
+    mkdir -p "$T/usr/lib/systemd/system"
+    : > "$T/usr/lib/systemd/system/keel-lnpp-check.service"
+    printf 'keel-check:x:997:997::/nonexistent:/usr/sbin/nologin\n' >> "$T/etc/passwd"
+    run "$CHECK"
+    [ "$status" -eq 0 ]
+}

@@ -10,7 +10,7 @@ spec.
 
 - `boot-test.sh`, `lib/boot-test-lib.sh`, `boot-test.bats`: the boot test.
   It has the steps of the boot test of keel-lnpp (database password,
-  Webmin, the check page at `/keel-check/`, `keel diff`) and the Odoo
+  Webmin, no check page at `/keel-check/`, `keel diff`) and the Odoo
   steps: `/web/login` answers with its form, the admin user logs in with
   `secrets.app_password`, a script bundle of the web client comes back
   with content, the websocket answers 101, and a report prints as PDF with

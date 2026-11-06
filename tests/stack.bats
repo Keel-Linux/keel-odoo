@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # The Nginx half of the layer on a machine (decision 0059): keel-web's real
-# sites, the include directory, the route of this layer and a stand-in of the
-# route of the check page, with two stub servers on the ports of Odoo. It
+# sites, the include directory and the route of this layer (the check page
+# of lnpp is not in the image), with two stub servers on the ports of Odoo. It
 # runs as root on a disposable trixie machine with nginx, openssl, curl and
 # python3, only where KEEL_ODOO_STACK_TEST=1, with KEEL_WEB_SRC naming a
 # checkout of keel-web. It proves what `nginx -t` and a request prove: no
@@ -29,16 +29,8 @@ setup_file() {
     install -D -m 0644 "$repo/overlay/etc/nginx/conf.d/keel-odoo.conf" /etc/nginx/conf.d/keel-odoo.conf
     install -D -m 0644 "$repo/overlay/etc/nginx/keel-default.d/60-keel-odoo.conf" \
         /etc/nginx/keel-default.d/60-keel-odoo.conf
-    # the routes of the check page, as keel-lnpp declares them
-    cat > /etc/nginx/keel-default.d/50-keel-lnpp.conf <<'ROUTE'
-location = /keel-check {
-	return 301 /keel-check/;
-}
-location ^~ /keel-check/ {
-	default_type text/plain;
-	return 200 "check page\n";
-}
-ROUTE
+    # conf.d/main removes the route of lnpp's check page
+    rm -f /etc/nginx/keel-default.d/50-keel-lnpp.conf
     install -D -m 0644 "$web/keel-default" /etc/nginx/sites-available/keel-default
     install -D -m 0644 "$web/default-anubis" /etc/nginx/sites-available/default-anubis
     install -D -m 0644 /dev/stdin /etc/nginx/snippets/keel-anubis.conf <<'SNIPPET'
@@ -115,11 +107,9 @@ teardown_file() {
     [[ $output == *"connection=close"* ]]
 }
 
-@test "the check page and its redirect still win over the catch-all" {
+@test "/keel-check/ is no route of its own: the check page of lnpp is not in the image, and Odoo answers" {
     run curl -sk https://127.0.0.1/keel-check/
-    [ "$output" = "check page" ]
-    run curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/keel-check
-    [ "$output" = 301 ]
+    [[ $output == "port=8069 path=/keel-check/ "* ]]
 }
 
 @test "the health check of keel-web still answers 204" {
@@ -157,5 +147,5 @@ host_ip() {
     run curl -s --unix-socket /run/nginx/keel-app.sock -H 'Connection: Upgrade' -H 'Upgrade: websocket' http://odoo.test/websocket
     [[ $output == "port=8072 path=/websocket "* ]]
     run curl -s --unix-socket /run/nginx/keel-app.sock http://odoo.test/keel-check/
-    [ "$output" = "check page" ]
+    [[ $output == "port=8069 path=/keel-check/ "* ]]
 }

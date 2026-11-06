@@ -137,6 +137,26 @@ FRONT=/etc/nginx/keel-front.d/60-keel-odoo.conf
 grep -qxF '	include /etc/nginx/keel-front.d/*.conf;' /etc/nginx/sites-available/default-anubis \
     || { echo "the front site of keel-web does not include keel-front.d: keel-web 0.3.2 is the least" >&2; exit 1; }
 
+# The stack check of lnpp is not part of the Odoo product: its first boot
+# hook makes a test database, keel_check, and its page /keel-check/ shows
+# the stack to anybody who asks (the commissioning test found both on BR1
+# and BR2, 2026-11-06). They are the parent layer's, so they are removed
+# here: the hook, the route, the application, and the socket that lnpp
+# enabled, so nothing starts the page. The deck build records each removal
+# as a whiteout of this layer, and keel assemble removes the path from the
+# image. conf.d/zz-check proves that none is left.
+#
+# keel-lnpp-check.service and its user keel-check stay: lnpp's manifest
+# names the page as a process with that unit, and keel refuses a chain
+# whose unit is not there. With no socket and no route nothing starts it.
+# The preset file of lnpp stays too: it disables the WAL archival of
+# postgresql-common.
+systemctl disable keel-lnpp-check.socket
+rm -rf /usr/lib/inithooks/firstboot.d/40lnpp-check \
+    /etc/nginx/keel-default.d/50-keel-lnpp.conf \
+    /usr/share/keel-lnpp \
+    /usr/lib/systemd/system/keel-lnpp-check.socket
+
 # The appliance manifest, validated and resolved along lnpp, web and core on
 # this very tree, so a manifest the booted machine would refuse fails the
 # build (the same line the WordPress layer ships).
