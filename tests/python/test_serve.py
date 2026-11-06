@@ -492,3 +492,54 @@ def test_warm_http_is_false_when_nothing_answers(serve, monkeypatch):
         raise OSError("refused")
     monkeypatch.setattr(serve.urllib.request, "urlopen", fake)
     assert serve.warm_http() is False
+
+
+# On the standby of a cloud pair Odoo does not serve, and Nginx answered 502
+# with the 50x page: the page did not say why (BR2, 2026-11-06). serve.py
+# writes a mark that Nginx reads, and only when it knows the node is a
+# standby, so a primary whose Odoo stopped still shows the 502.
+def test_mark_replica_writes_the_mark_on_a_standby_and_removes_it_on_a_primary(serve, tmp_path):
+    mark = tmp_path / "replica"
+    serve.mark_replica(False, str(mark))
+    assert mark.exists()
+    serve.mark_replica(False, str(mark))
+    assert mark.exists()
+    serve.mark_replica(True, str(mark))
+    assert not mark.exists()
+    serve.mark_replica(True, str(mark))
+    assert not mark.exists()
+
+
+def test_mark_replica_changes_nothing_when_the_server_is_silent(serve, tmp_path):
+    mark = tmp_path / "replica"
+    serve.mark_replica(None, str(mark))
+    assert not mark.exists()
+    mark.touch()
+    serve.mark_replica(None, str(mark))
+    assert mark.exists()
+
+
+def test_mark_replica_says_a_mark_it_cannot_write_and_goes_on(serve, tmp_path, capsys):
+    serve.mark_replica(False, str(tmp_path / "no-such-dir" / "replica"))
+    assert "keel-odoo: the replica mark" in capsys.readouterr().err
+
+
+def test_the_supervisor_marks_each_change_of_the_role_once(serve):
+    world = World(serve)
+    marks = []
+    sup = world.supervisor()
+    sup.mark = marks.append
+    sup.tick()
+    sup.tick()
+    world.writable = None
+    sup.tick()
+    world.writable = True
+    sup.tick()
+    sup.tick()
+    world.writable = False
+    sup.tick()
+    assert marks == [False, True, False]
+
+
+def test_the_mark_is_in_the_runtime_directory_of_the_unit(serve):
+    assert serve.REPLICA_MARK == "/run/keel-odoo/replica"

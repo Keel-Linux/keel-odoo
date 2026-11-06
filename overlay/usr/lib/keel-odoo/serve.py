@@ -21,7 +21,12 @@ node and the last part on one node only:
 - when the answer is no, it stops the child at once. A fenced or old
   primary is in recovery, so it never serves;
 - when the server does not answer, it changes nothing, so a restart of
-  PostgreSQL does not take Odoo down.
+  PostgreSQL does not take Odoo down;
+- it writes the mark REPLICA_MARK while the node is a standby and removes
+  it on a writable node. Nginx reads the mark and shows a page that says
+  why Odoo does not serve here, in place of the 502 page
+  (etc/nginx/keel-default.d/60-keel-odoo.conf). A primary whose Odoo
+  stopped has no mark, so its 502 stays.
 
 The first boot hook sets the password of the spec before it writes READY.
 The image has the password of a fresh Odoo until then, so a failed hook
@@ -34,6 +39,8 @@ import time
 import urllib.request
 
 READY = "/var/lib/keel-odoo/ready"
+# in RuntimeDirectory=keel-odoo of odoo.service, so it goes when the unit stops
+REPLICA_MARK = "/run/keel-odoo/replica"
 ODOO_BIN = "/opt/odoo/18.0/odoo-bin"
 CONF = "/etc/odoo/odoo.conf"
 DATABASE = "odoo"
@@ -64,6 +71,20 @@ def decide(ready, writable, serving):
     if writable is True and not serving and ready:
         return "start"
     return None
+
+
+def mark_replica(writable, path=REPLICA_MARK):
+    """Write the mark on a standby (False), remove it on a writable node
+    (True), change nothing when the server is silent (None). A mark that
+    cannot change is said: the page of Nginx is then wrong, Odoo is not."""
+    try:
+        if writable is False:
+            with open(path, "w"):
+                pass
+        elif writable is True and os.path.exists(path):
+            os.remove(path)
+    except OSError as error:
+        print("<4>keel-odoo: the replica mark %s did not change: %s" % (path, error), file=sys.stderr, flush=True)
 
 
 def is_ready(path=READY):
@@ -152,8 +173,10 @@ def import_modules(names, load):
 
 class Supervisor:
     def __init__(self, poller, is_ready, start_child, stop_child, child_alive, clock, warm=None,
-                 warm_http=None):
+                 warm_http=None, mark=None):
         self.poller = poller
+        self.mark = mark
+        self.marked = None
         self.is_ready = is_ready
         self.start_child = start_child
         self.stop_child = stop_child
@@ -173,6 +196,10 @@ class Supervisor:
             self.child = None
             self.not_before = self.clock() + RESTART_DELAY
         writable = self.poller.writable()
+        if writable is not None and writable != self.marked:
+            self.marked = writable
+            if self.mark is not None:
+                self.mark(writable)
         if not self.warmed and writable is not None:
             # once, when the server first answers
             self.warmed = True
@@ -286,7 +313,7 @@ def main():  # pragma: no cover
     signal.signal(signal.SIGTERM, lambda *_: stopping.append(True))
     signal.signal(signal.SIGINT, lambda *_: stopping.append(True))
     supervisor = Supervisor(Poller(connect), is_ready, fork_odoo, stop_child, child_alive, time.monotonic,
-                            warm_modules, warm_http)
+                            warm_modules, warm_http, mark_replica)
     print("<5>keel-odoo: loaded, waiting for a writable PostgreSQL", flush=True)
     while not stopping:
         supervisor.tick()

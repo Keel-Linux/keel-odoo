@@ -22,6 +22,10 @@ StandardOutput=journal
 StandardError=journal
 ProtectSystem=strict
 ReadWritePaths=/var/lib/odoo
+# /run/keel-odoo/replica: serve.py writes it on a standby, and Nginx reads it
+# to show the notice of the replica (etc/nginx/keel-default.d/60-keel-odoo.conf)
+RuntimeDirectory=keel-odoo
+RuntimeDirectoryMode=0755
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes

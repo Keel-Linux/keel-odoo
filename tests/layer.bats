@@ -108,10 +108,15 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     grep -q 'proxy_set_header Connection \$keel_odoo_connection;' "$ROUTE"
 }
 
-@test "route: the protocol that Odoo sees is https behind the socket of Anubis" {
+# keel-web 0.4.0 (decision 0079): port 80 goes through Anubis while the
+# certificate is self-signed, so the socket takes the front's
+# X-Forwarded-Proto: http for http, https for anything else
+@test "route: behind the socket of Anubis, Odoo sees the front's scheme, https unless it is http" {
     grep -q 'proxy_set_header X-Forwarded-Proto \$keel_odoo_proto;' "$ROUTE"
     grep -q 'default \$scheme;' "$MAP"
-    grep -q '~^unix: https;' "$MAP"
+    grep -q '~^unix: \$keel_odoo_front_proto;' "$MAP"
+    run awk '/map \$http_x_forwarded_proto \$keel_odoo_front_proto/,/}/' "$MAP"
+    [[ "$output" == *$'\tdefault https;\n\thttp http;\n}'* ]]
 }
 
 @test "route: the map for the websocket header" {
@@ -281,4 +286,26 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 
 @test "build: the manifest is validated along the chain, so one the booted machine would refuse fails the build" {
     grep -qx 'keel manifest validate odoo' conf.d/main
+}
+
+# The notice of the replica (BR2, 2026-11-06): serve.py writes the mark in
+# the runtime directory of its unit, and the route shows the page while the
+# mark is there. tests/stack.bats proves the requests.
+@test "replica: the unit makes /run/keel-odoo for the mark of serve.py" {
+    grep -qx 'RuntimeDirectory=keel-odoo' "$ODOO_UNIT"
+    grep -qx 'RuntimeDirectoryMode=0755' "$ODOO_UNIT"
+    grep -qx 'REPLICA_MARK = "/run/keel-odoo/replica"' "$SERVE"
+}
+
+@test "replica: the route shows the notice while the mark is there, and only by an internal redirect" {
+    grep -qF 'if (-f /run/keel-odoo/replica) {' "$ROUTE"
+    grep -qF 'rewrite ^ /keel-odoo-replica.html last;' "$ROUTE"
+    run awk '/location = \/keel-odoo-replica.html/,/}/' "$ROUTE"
+    [[ "$output" == *internal\;* ]]
+    [[ "$output" == *"root /usr/share/keel-odoo/www;"* ]]
+    [[ "$output" == *"add_header Cache-Control no-store always;"* ]]
+}
+
+@test "replica: the notice says that the node is the replica" {
+    grep -qF 'This node is the replica of a cloud pair.' "$OVERLAY/usr/share/keel-odoo/www/keel-odoo-replica.html"
 }

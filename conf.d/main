@@ -131,11 +131,19 @@ trap - EXIT
 systemctl enable odoo.service
 
 # The front site of Keel Web must include keel-front.d, so an upload is not
-# stopped at 1 MB behind Anubis.
+# stopped at 1 MB behind Anubis. Since keel-web 0.4.0 (decision 0079) each
+# server of the front includes a snippet, and the snippet includes the
+# directory: the build on keel-web 0.4.1 stopped on the check of the site
+# itself (build host, 2026-11-06). tests/stack.bats runs this block on
+# keel-web's real files.
+# begin: front check
 FRONT=/etc/nginx/keel-front.d/60-keel-odoo.conf
+SNIPPET=/etc/nginx/snippets/keel-web-front.conf
 [ -f "$FRONT" ]
-grep -qxF '	include /etc/nginx/keel-front.d/*.conf;' /etc/nginx/sites-available/default-anubis \
-    || { echo "the front site of keel-web does not include keel-front.d: keel-web 0.3.2 is the least" >&2; exit 1; }
+{ grep -qxF 'include /etc/nginx/keel-front.d/*.conf;' "$SNIPPET" \
+    && grep -qxF "	include $SNIPPET;" /etc/nginx/sites-available/default-anubis; } \
+    || { echo "the front site of keel-web does not include keel-front.d: keel-web 0.4.0 is the least" >&2; exit 1; }
+# end: front check
 
 # The stack check of lnpp is not part of the Odoo product: its first boot
 # hook makes a test database, keel_check, and its page /keel-check/ shows
