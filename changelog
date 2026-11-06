@@ -8,6 +8,26 @@ keel-odoo-19.0 (15) keel; urgency=medium
   * tests/commission.yaml asks http://127.0.0.1/web/login (200) and
     http://127.0.0.1/keel-health (204). tests/stack.bats installs
     keel-web's snippets and checks the loopback of port 80.
+  * conf.d/main checks keel-front.d through the snippet of keel-web 0.4.0,
+    keel-web-front.conf, which the front site includes. The build of the
+    odoo layer on keel-web 0.4.1 stopped on the old check of the site
+    (build host, 2026-11-06). tests/stack.bats runs the check on keel-web's
+    real files.
+  * The standby of a cloud pair shows a notice on each page of Odoo: "This
+    node is the replica of a cloud pair.", why Odoo does not run there and
+    where it serves. Before, Nginx answered 502 with the 50x page, which
+    said nothing (BR2, 2026-11-06). serve.py writes /run/keel-odoo/replica
+    while PostgreSQL is in recovery and removes it on a writable node
+    (RuntimeDirectory of odoo.service); the route of Nginx shows
+    /usr/share/keel-odoo/www/keel-odoo-replica.html while the mark is
+    there. A primary whose Odoo stopped has no mark and keeps its 502.
+  * tests/commission.yaml: the cloud part takes the shape of the reference
+    contract (hotkeys, the wait screen, the VIP holder by "carried here:
+    yes", a row written on the primary and read on the standby, the
+    Syncthing folder types, Odoo on the node that holds the VIP after a
+    promote and after the return), the replica proves the notice in its
+    screenshot, and on a standby the app proof checks the secret against
+    the replicated hash.
 
  -- KeelLinux maintainers <admin@keellinux.org>  Fri, 06 Nov 2026 07:00:00 +0000
 

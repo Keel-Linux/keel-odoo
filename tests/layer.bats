@@ -287,3 +287,25 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
 @test "build: the manifest is validated along the chain, so one the booted machine would refuse fails the build" {
     grep -qx 'keel manifest validate odoo' conf.d/main
 }
+
+# The notice of the replica (BR2, 2026-11-06): serve.py writes the mark in
+# the runtime directory of its unit, and the route shows the page while the
+# mark is there. tests/stack.bats proves the requests.
+@test "replica: the unit makes /run/keel-odoo for the mark of serve.py" {
+    grep -qx 'RuntimeDirectory=keel-odoo' "$ODOO_UNIT"
+    grep -qx 'RuntimeDirectoryMode=0755' "$ODOO_UNIT"
+    grep -qx 'REPLICA_MARK = "/run/keel-odoo/replica"' "$SERVE"
+}
+
+@test "replica: the route shows the notice while the mark is there, and only by an internal redirect" {
+    grep -qF 'if (-f /run/keel-odoo/replica) {' "$ROUTE"
+    grep -qF 'rewrite ^ /keel-odoo-replica.html last;' "$ROUTE"
+    run awk '/location = \/keel-odoo-replica.html/,/}/' "$ROUTE"
+    [[ "$output" == *internal\;* ]]
+    [[ "$output" == *"root /usr/share/keel-odoo/www;"* ]]
+    [[ "$output" == *"add_header Cache-Control no-store always;"* ]]
+}
+
+@test "replica: the notice says that the node is the replica" {
+    grep -qF 'This node is the replica of a cloud pair.' "$OVERLAY/usr/share/keel-odoo/www/keel-odoo-replica.html"
+}

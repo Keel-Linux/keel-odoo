@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Odoo: replica node</title>
+<style>
+body { font-family: sans-serif; max-width: 40em; margin: 4em auto; padding: 0 1em; color: #222; line-height: 1.5; }
+h1 { font-size: 1.4em; }
+</style>
+</head>
+<body>
+<!-- keel-odoo: the page of Odoo on the standby of a cloud pair. Nginx
+     shows it while /run/keel-odoo/replica is there (serve.py writes it). -->
+<h1>This node is the replica of a cloud pair.</h1>
+<p>Its database is a read-only copy of the primary node's database, so Odoo
+does not run here: it cannot record a login or a change.</p>
+<p>Open Odoo at the address of the primary node, or at the VIP of the pair.
+When an operator promotes this node with <code>keel vip promote</code>, Odoo
+starts here and this page goes away.</p>
+</body>
+</html>

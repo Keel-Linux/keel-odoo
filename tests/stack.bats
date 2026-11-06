@@ -33,6 +33,12 @@ setup_file() {
     rm -f /etc/nginx/keel-default.d/50-keel-lnpp.conf
     install -D -m 0644 "$web/keel-default" /etc/nginx/sites-available/keel-default
     install -D -m 0644 "$web/default-anubis" /etc/nginx/sites-available/default-anubis
+    install -D -m 0644 "$repo/overlay/etc/nginx/keel-front.d/60-keel-odoo.conf" \
+        /etc/nginx/keel-front.d/60-keel-odoo.conf
+    install -D -m 0644 "$repo/overlay/usr/share/keel-odoo/www/keel-odoo-replica.html" \
+        /usr/share/keel-odoo/www/keel-odoo-replica.html
+    mkdir -p /run/keel-odoo
+    rm -f /run/keel-odoo/replica
     # keel-web 0.4.0 and later (decision 0079): the content of the sites is
     # in snippets, which the sites include
     local snippet
@@ -147,6 +153,53 @@ host_ip() {
     [ "$output" = 204 ]
 }
 
+# conf.d/main stops the build when the front site does not include
+# keel-front.d. keel-web 0.4.0 (decision 0079) moved that include into a
+# snippet, and the build of the odoo layer on keel-web 0.4.1 stopped on the
+# old check (build host, 2026-11-06). The check of conf.d/main runs here on
+# keel-web's real files.
+@test "the build's check finds keel-front.d in the front site of keel-web" {
+    local repo
+    repo="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+    local check
+    check=$(sed -n '/^# begin: front check/,/^# end: front check/p' "$repo/conf.d/main")
+    [[ $check == *keel-front.d* ]]
+    run bash -euc "$check"
+    if [ "$status" -ne 0 ]; then
+        echo "$output" >&3
+        return 1
+    fi
+}
+
+# On the standby of a cloud pair Odoo does not serve (serve.py), and it
+# writes /run/keel-odoo/replica. Nginx then shows a page that says why, in
+# place of the 502 page. With no mark (a primary whose Odoo stopped) the
+# request goes to Odoo as before (BR2, 2026-11-06).
+@test "with the replica mark, a page of Odoo is the notice of the replica" {
+    touch /run/keel-odoo/replica
+    run curl -sk --http1.1 -D - https://127.0.0.1/web/login
+    rm -f /run/keel-odoo/replica
+    [[ $output == "HTTP/"*" 200 "* ]]
+    [[ $output == *"This node is the replica of a cloud pair."* ]]
+    [[ $output == *$'Cache-Control: no-store'* ]]
+    [[ $output != *"port=8069"* ]]
+}
+
+@test "with the replica mark, the websocket and /keel-health are not changed" {
+    touch /run/keel-odoo/replica
+    run curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/keel-health
+    local health=$output
+    run curl -sk --http1.1 -H 'Connection: Upgrade' -H 'Upgrade: websocket' https://127.0.0.1/websocket
+    rm -f /run/keel-odoo/replica
+    [ "$health" = 204 ]
+    [[ $output == "port=8072 path=/websocket "* ]]
+}
+
+@test "the notice has no address of its own" {
+    run curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/keel-odoo-replica.html
+    [ "$output" = 404 ]
+}
+
 @test "a client cannot set the protocol that Odoo sees" {
     run curl -s -H 'X-Forwarded-Proto: https' "http://$(host_ip)/web/login"
     [[ $output == *"proto=http "* ]]
@@ -173,4 +226,9 @@ host_ip() {
     [[ $output == "port=8072 path=/websocket "* ]]
     run curl -s --unix-socket /run/nginx/keel-app.sock http://odoo.test/keel-check/
     [[ $output == "port=8069 path=/keel-check/ "* ]]
+    # behind Anubis the replica shows the notice too
+    touch /run/keel-odoo/replica
+    run curl -s --unix-socket /run/nginx/keel-app.sock http://odoo.test/web/login
+    rm -f /run/keel-odoo/replica
+    [[ $output == *"This node is the replica of a cloud pair."* ]]
 }

@@ -73,9 +73,12 @@ proofs:
   # the Odoo admin user, by Odoo's own login over XML-RPC; the password goes
   # from the environment, never on a command line. Odoo starts once the first
   # boot hook has written its ready mark, so the proof waits up to 5 minutes.
+  # On the standby of a cloud pair Odoo does not run (serve.py): there the
+  # proof checks the secret against the hash of the admin user in the
+  # replicated database, with passlib as Odoo does (pbkdf2_sha512).
   - secret: app
     kind: command
-    run: for i in $(seq 60); do python3 -c 'import os, sys, xmlrpc.client as x; sys.exit(0 if x.ServerProxy("http://127.0.0.1:8069/xmlrpc/2/common").authenticate("odoo", "admin", os.environ["SECRET"], {}) else 1)' 2>/dev/null && exit 0; sleep 5; done; exit 1
+    run: if [ "$(runuser -u postgres -- psql -d odoo -Atc 'SELECT pg_is_in_recovery()')" = t ]; then HASH=$(runuser -u postgres -- psql -d odoo -Atc "SELECT password FROM res_users WHERE login = 'admin'") python3 -c 'import os, sys; from passlib.context import CryptContext; sys.exit(0 if CryptContext(["pbkdf2_sha512"]).verify(os.environ["SECRET"], os.environ["HASH"]) else 1)'; exit; fi; for i in $(seq 60); do python3 -c 'import os, sys, xmlrpc.client as x; sys.exit(0 if x.ServerProxy("http://127.0.0.1:8069/xmlrpc/2/common").authenticate("odoo", "admin", os.environ["SECRET"], {}) else 1)' 2>/dev/null && exit 0; sleep 5; done; exit 1
 services: [nginx, postgresql, odoo, webmin, cron, postfix, ssh]
 urls:
   - {url: 'https://127.0.0.1/web/login', status: 200}
@@ -110,34 +113,66 @@ screenshots:
     wait: 8
 # The cloud modes (decision 0076): PostgreSQL is a replicating engine (the
 # pair of decisions 0054 and 0057), and the filestore follows the VIP. The
-# prompts are the titles of the confconsole screens. This part is declared
-# for the cloud passes; the single node passes do not read it.
+# prompts are the titles of the confconsole screens, the shape of the
+# reference contract of .github (tests/fixtures/commission/wordpress.yaml).
+# This part is declared for the cloud passes; the single node passes do not
+# read it.
 cloud:
   capture:
+    # keel1: an invite without a VIP, keel2: one that carries it (keel 0.23.83)
     invite: 'keel[12]:[A-Za-z0-9_.~+/=-]+'
+    # the label anchors it: the usage screen shows the node's own addresses too
     vip: 'VIP:? +([0-9a-f]{1,4}(:[0-9a-f]{0,4}){2,7})'
+  # the screens on which a node waits for another: no key while they are up
+  waits: [Waiting for the nodes]
+  # the proofs across the pair, in order: one VIP holder, a row written on
+  # the primary and read on the standby, the filestore folder types of
+  # Syncthing, Odoo serving on the node that holds the VIP, and a promote
+  # and its return
   checks:
-    - {id: vip-holder, at: all, run: 'keel vip status', match: 'holder', count: 1}
-    - {id: row-through-vip, at: replica, secret: db, run: 'PGPASSWORD="$SECRET" psql -h "$VIP" -U postgres -d odoo -Atc "SELECT 1"'}
-    - {id: files-follow, at: replica, run: 'keel vip status', match: 'files: from '}
+    - {id: vip-holder, at: all, run: 'keel vip status', match: 'carried here: yes', count: 1}
+    - {id: row-written, at: primary, run: 'runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "CREATE TABLE IF NOT EXISTS kc_probe (v int); INSERT INTO kc_probe VALUES (42)"'}
+    - {id: row-replicated, at: replica, run: 'sleep 5; runuser -u postgres -- psql -d postgres -Atc "SELECT v FROM kc_probe"', match: '^42$'}
+    - {id: replica-in-recovery, at: replica, run: 'runuser -u postgres -- psql -d postgres -Atc "SELECT pg_is_in_recovery()"', match: '^t$'}
+    - {id: files-follow, at: replica, run: 'k=$(cat /var/lib/keel/filesync/apikey); curl -s -H "X-API-Key: $k" http://127.0.0.1:8384/rest/config/folders', match: 'receiveonly'}
+    - {id: files-sent, at: primary, run: 'k=$(cat /var/lib/keel/filesync/apikey); curl -s -H "X-API-Key: $k" http://127.0.0.1:8384/rest/config/folders', match: 'sendonly'}
+    - {id: odoo-on-primary, at: primary, run: 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login', match: '^200$'}
+    - {id: replica-notice, at: replica, run: 'curl -sk https://127.0.0.1/web/login', match: 'This node is the replica of a cloud pair.'}
     - {id: promote, at: replica, run: 'keel vip promote'}
-    - {id: promoted-holder, at: replica, run: 'keel vip status', match: 'holder'}
+    - {id: promoted-holder, at: replica, run: 'keel vip status', match: 'carried here: yes'}
+    # serve.py starts Odoo on the promoted node: the warm start takes seconds
+    - {id: odoo-on-promoted, at: replica, run: 'for i in $(seq 60); do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login); [ "$c" = 200 ] && break; sleep 2; done; echo $c', match: '^200$'}
     - {id: return, at: primary, run: 'keel vip promote'}
-    - {id: returned-holder, at: primary, run: 'keel vip status', match: 'holder'}
+    - {id: returned-holder, at: primary, run: 'keel vip status', match: 'carried here: yes'}
+    - {id: odoo-returned, at: primary, run: 'for i in $(seq 60); do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login); [ "$c" = 200 ] && break; sleep 2; done; echo $c', match: '^200$'}
+    - {id: probe-dropped, at: primary, run: 'runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "DROP TABLE kc_probe"'}
 nodes:
   - name: primary
     site: br1
     mode: cloud_simple
     role: primary
+    # the hotkeys of the menus (the first letter of an item): an arrow key is
+    # an escape sequence, and the console of a container can hand dialog its
+    # ESC alone, which cancels the screen (BR1, 2026-11-06)
     answers:
-      - {id: mode, prompt: Installation mode, keys: '{down}{ret}'}
-      - {id: role, prompt: Role of this node, keys: '{ret}'}
+      - {id: mode, prompt: Installation mode, keys: 'C{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'P{ret}'}
       - {id: invite, prompt: Invite a node, keys: '{ret}'}
   - name: replica
     site: br2
     mode: cloud_simple
     role: replica
     answers:
-      - {id: mode, prompt: Installation mode, keys: '{down}{ret}'}
-      - {id: role, prompt: Role of this node, keys: '{down}{ret}'}
+      - {id: mode, prompt: Installation mode, keys: 'C{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'R{ret}'}
       - {id: join, prompt: Join a mesh, keys: '{invite:1}{ret}'}
+    # Odoo does not run on the standby: each page of Odoo there is the notice
+    # of the replica (serve.py's mark, 60-keel-odoo.conf), and the shot proves
+    # the notice instead of a login (BR2, 2026-11-06)
+    screenshots:
+      - {name: odoo, url: /web/login, text: This node is the replica of a cloud pair., wait: 8}
+      - name: webmin
+        port: 12321
+        url: /
+        login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
+        wait: 8
