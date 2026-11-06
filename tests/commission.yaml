@@ -110,7 +110,9 @@ screenshots:
     port: 12321
     url: /
     login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
-    wait: 8
+    # the dashboard of Webmin draws after the login; 8 s took a half
+    # drawn page on a busy VM of BR2 (vm-iso, 2026-11-06)
+    wait: 20
 # The cloud modes (decision 0076): PostgreSQL is a replicating engine (the
 # pair of decisions 0054 and 0057), and the filestore follows the VIP. The
 # prompts are the titles of the confconsole screens, the shape of the
@@ -175,4 +177,6 @@ nodes:
         port: 12321
         url: /
         login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
-        wait: 8
+        # the dashboard of Webmin draws after the login; 8 s took a half
+        # drawn page on a busy VM of BR2 (vm-iso, 2026-11-06)
+        wait: 20
