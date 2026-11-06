@@ -1,9 +1,9 @@
-Odoo:       https://[$ipaddr6]
+Odoo 18.0:  https://[$ipaddr6]
 Webmin:     https://[$ipaddr6]:12321
 SSH/SFTP:   root@$ipaddr6 (port 22)
 PostgreSQL: psql --username=postgres --host=::1
 
-Odoo:       https://$ipaddr
+Odoo 18.0:  https://$ipaddr
 Webmin:     https://$ipaddr:12321
 SSH/SFTP:   root@$ipaddr (port 22)
 PostgreSQL: psql --username=postgres --host=127.0.0.1

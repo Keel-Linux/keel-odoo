@@ -1,3 +1,12 @@
+keel-odoo-19.0 (16) keel; urgency=medium
+
+  * The services screen names the Odoo series, "Odoo 18.0". The image is
+    named after the Keel release (19.0-N), which reads as an Odoo version
+    (the maintainer, 2026-11-06). A test keeps the name equal to the series
+    the build checks out.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Fri, 06 Nov 2026 13:30:00 +0000
+
 keel-odoo-19.0 (15) keel; urgency=medium
 
   * Port 80 (keel-web 0.4.0, handbook decision 0079): behind Anubis, Odoo
