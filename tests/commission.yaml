@@ -150,9 +150,12 @@ cloud:
     - {id: replica-notice, at: replica, run: 'curl -sk https://127.0.0.1/web/login', match: 'This node is the replica of a cloud pair.'}
     # the semi-synchronous fallback (keel 0.23.88): with the standby's server
     # stopped, a write on the primary still finishes; monit is stopped too, so
-    # nothing starts the server again during the check
+    # nothing starts the server again during the check. The primary also
+    # sends the alert of the fallback to the ntfy topic of the pass
+    # (KC_NTFY_URL of keel-commission): it came 36 s after the stop on
+    # BR1/BR2, 2026-11-07
     - {id: standby-stopped, at: replica, run: 'systemctl stop monit; systemctl stop postgresql; systemctl is-active postgresql@17-main || echo stopped', match: 'stopped', modes: [cloud_simple]}
-    - {id: write-without-standby, at: primary, run: 'timeout 180 runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "CREATE TABLE IF NOT EXISTS kc_async (v int); INSERT INTO kc_async VALUES (1)" && echo written', match: '^written$', modes: [cloud_simple]}
+    - {id: write-without-standby, at: primary, run: 'timeout 180 runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "CREATE TABLE IF NOT EXISTS kc_async (v int); INSERT INTO kc_async VALUES (1)" && echo written', match: '^written$', alert: fell back to asynchronous, within: 90, modes: [cloud_simple]}
     - {id: standby-back, at: replica, run: 'systemctl start postgresql; systemctl start monit; for i in $(seq 60); do s=$(runuser -u postgres -- psql -Atc "SELECT status FROM pg_stat_wal_receiver" 2>/dev/null); [ "$s" = streaming ] && break; sleep 3; done; echo $s', match: '^streaming$', modes: [cloud_simple]}
     - {id: async-row-replicated, at: replica, run: 'for i in $(seq 30); do v=$(runuser -u postgres -- psql -d postgres -Atc "SELECT count(*) FROM kc_async" 2>/dev/null); [ "$v" = 1 ] && break; sleep 2; done; echo $v', match: '^1$', modes: [cloud_simple]}
     - {id: promote, at: replica, run: 'keel vip promote', modes: [cloud_simple]}
