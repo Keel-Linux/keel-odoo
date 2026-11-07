@@ -119,6 +119,73 @@ CRS=$OVERLAY/etc/coreruleset/plugins/keel-odoo-before.conf
     [[ "$output" == *$'\tdefault https;\n\thttp http;\n}'* ]]
 }
 
+# The asset bundles behind Anubis: a cache in the front, the route without
+# the cookies before the catch-all (CT 9390, BR1, 2026-11-07)
+ASSET_FRONT=$OVERLAY/etc/nginx/keel-front.d/61-keel-odoo-assets.conf
+ASSET_ROUTE=$OVERLAY/etc/nginx/keel-default.d/59-keel-odoo-assets.conf
+ASSET_RX='^/web/assets/(?:[0-9]+/)?[0-9a-f]{7,}/[A-Za-z0-9_.-]+\.(?:css|js)$'
+
+@test "assets: the front and the route match the same paths, by the regular expression of the study" {
+    grep -qxF "location ~ \"$ASSET_RX\" {" "$ASSET_FRONT"
+    grep -qxF "location ~ \"$ASSET_RX\" {" "$ASSET_ROUTE"
+}
+
+@test "assets: the regular expression takes a bundle, and no query string, wrong hash or other path" {
+    local rx=${ASSET_RX//\(?:/(}
+    for path in /web/assets/ae9bb10/web.assets_frontend.min.css /web/assets/1/ae9bb10/web.assets_frontend_lazy.min.js \
+            /web/assets/0123456789abcdef/web.assets_web.min.js; do
+        [[ $path =~ $rx ]]
+    done
+    for path in /web/assets/ae9bb1/a.css \
+            /web/assets/zzzzzzz/a.css /web/assets/debug/web.assets_web.min.css /web/assets/ae9bb10/a.scss \
+            /web/static/img/favicon.ico /web/assets/ae9bb10/../a.css/x.js; do
+        if [[ $path =~ $rx ]]; then
+            echo "matched: $path"
+            return 1
+        fi
+    done
+}
+
+@test "assets: the front asks Anubis on a miss, and stores by host and URI" {
+    grep -qxF '	include /etc/nginx/snippets/keel-anubis.conf;' "$ASSET_FRONT"
+    grep -qxF '	proxy_cache keel_odoo_assets;' "$ASSET_FRONT"
+    grep -qxF '	proxy_cache_key $host$request_uri;' "$ASSET_FRONT"
+    grep -qxF '	proxy_cache_lock on;' "$ASSET_FRONT"
+}
+
+# nginx matches a location without the query string: a bundle with one is
+# neither read from the cache nor stored
+@test "assets: a query string bypasses the cache" {
+    grep -qxF '	proxy_cache_bypass $args;' "$ASSET_FRONT"
+    grep -qxF '	proxy_no_cache $keel_odoo_asset_nocache $keel_odoo_asset_cookie $args;' "$ASSET_FRONT"
+}
+
+@test "assets: only a reply marked immutable that sets no cookie is stored" {
+    grep -qF '	proxy_no_cache $keel_odoo_asset_nocache $keel_odoo_asset_cookie ' "$ASSET_FRONT"
+    run awk '/map \$upstream_http_cache_control \$keel_odoo_asset_nocache/,/}/' "$MAP"
+    [[ "$output" == *$'\tdefault 1;\n\t"~immutable" 0;\n}'* ]]
+    run awk '/map \$upstream_http_set_cookie \$keel_odoo_asset_cookie/,/}/' "$MAP"
+    [[ "$output" == *$'\tdefault 1;\n\t"" 0;\n}'* ]]
+    grep -q '^proxy_cache_path /var/cache/nginx/keel-odoo-assets .*keys_zone=keel_odoo_assets:' "$MAP"
+    grep -qx 'install -d -o www-data -g www-data -m 0700 /var/cache/nginx/keel-odoo-assets' conf.d/main
+}
+
+@test "assets: the route clears the Cookie, hides Set-Cookie, and loads before the catch-all" {
+    grep -qxF '	proxy_set_header Cookie "";' "$ASSET_ROUTE"
+    grep -qxF '	proxy_hide_header Set-Cookie;' "$ASSET_ROUTE"
+    grep -qxF '	proxy_pass http://127.0.0.1:8069;' "$ASSET_ROUTE"
+    grep -qxF '		rewrite ^ /keel-odoo-replica.html last;' "$ASSET_ROUTE"
+    run ls "$OVERLAY/etc/nginx/keel-default.d"
+    [ "$output" = $'59-keel-odoo-assets.conf\n60-keel-odoo.conf' ]
+}
+
+@test "assets: the route has every header of the catch-all" {
+    local line
+    while IFS= read -r line; do
+        grep -qxF "$line" "$ASSET_ROUTE"
+    done < <(awk '/^location ~ \^\/ \{$/,/^}$/' "$ROUTE" | grep '^	proxy_')
+}
+
 @test "route: the map for the websocket header" {
     grep -q 'map \$http_upgrade \$keel_odoo_connection' "$MAP"
 }

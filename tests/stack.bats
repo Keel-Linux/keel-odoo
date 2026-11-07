@@ -29,6 +29,14 @@ setup_file() {
     install -D -m 0644 "$repo/overlay/etc/nginx/conf.d/keel-odoo.conf" /etc/nginx/conf.d/keel-odoo.conf
     install -D -m 0644 "$repo/overlay/etc/nginx/keel-default.d/60-keel-odoo.conf" \
         /etc/nginx/keel-default.d/60-keel-odoo.conf
+    install -D -m 0644 "$repo/overlay/etc/nginx/keel-default.d/59-keel-odoo-assets.conf" \
+        /etc/nginx/keel-default.d/59-keel-odoo-assets.conf
+    install -D -m 0644 "$repo/overlay/etc/nginx/keel-front.d/61-keel-odoo-assets.conf" \
+        /etc/nginx/keel-front.d/61-keel-odoo-assets.conf
+    # as conf.d/main makes it
+    install -d -m 0755 /var/cache/nginx
+    rm -rf /var/cache/nginx/keel-odoo-assets
+    install -d -o www-data -g www-data -m 0700 /var/cache/nginx/keel-odoo-assets
     # conf.d/main removes the route of lnpp's check page
     rm -f /etc/nginx/keel-default.d/50-keel-lnpp.conf
     install -D -m 0644 "$web/keel-default" /etc/nginx/sites-available/keel-default
@@ -67,10 +75,12 @@ import http.server, sys
 port = int(sys.argv[1])
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = "port=%d path=%s host=%s proto=%s upgrade=%s connection=%s\n" % (
+        body = "port=%d path=%s host=%s proto=%s upgrade=%s connection=%s cookie=%s\n" % (
             port, self.path, self.headers.get("Host"), self.headers.get("X-Forwarded-Proto"),
-            self.headers.get("Upgrade"), self.headers.get("Connection"))
+            self.headers.get("Upgrade"), self.headers.get("Connection"), self.headers.get("Cookie"))
         self.send_response(200)
+        # Odoo sets a session cookie on every reply, the bundles too
+        self.send_header("Set-Cookie", "session_id=fromodoo; Path=/")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body.encode())
@@ -78,8 +88,35 @@ class H(http.server.BaseHTTPRequestHandler):
         pass
 http.server.ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
 STUB
+    # the stub of Anubis on [::1]:8923: X-Stub says what it answers, the
+    # challenge (no-store, a cookie), a bundle that sets a cookie, or a
+    # bundle as Odoo sends it through the route (immutable, no cookie)
+    cat > /tmp/keel-odoo-anubis-stub.py <<'STUB'
+import http.server, socket
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        mode = self.headers.get("X-Stub", "bundle")
+        if mode == "challenge":
+            body, ctype, cc = "Making sure you're not a bot!\n", "text/html", "no-store"
+        else:
+            body, ctype, cc = "body{color:red}\n", "text/css", "public, max-age=31536000, immutable"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", cc)
+        if mode in ("challenge", "cookie"):
+            self.send_header("Set-Cookie", "techaro.lol-anubis-auth=; Max-Age=0")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body.encode())
+    def log_message(self, *args):
+        pass
+class S(http.server.ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+S(("::1", 8923), H).serve_forever()
+STUB
     python3 /tmp/keel-odoo-stub.py 8069 &
     python3 /tmp/keel-odoo-stub.py 8072 &
+    python3 /tmp/keel-odoo-anubis-stub.py &
     echo "$(jobs -p | tr '\n' ' ')" > /tmp/keel-odoo-stub.pids
     nginx -t
     systemctl restart nginx
@@ -200,6 +237,29 @@ host_ip() {
     [ "$output" = 404 ]
 }
 
+# The route of the asset bundles (59-keel-odoo-assets.conf) takes the
+# cookies away, so Odoo serves a bundle as the public user and the front
+# can store it. Any other path keeps them.
+@test "a bundle reaches Odoo with no cookie, and the client gets no cookie" {
+    run curl -sk -D - -H 'Cookie: session_id=secret' https://127.0.0.1/web/assets/ae9bb10/web.assets_frontend.min.css
+    [[ $output == *"port=8069 path=/web/assets/ae9bb10/web.assets_frontend.min.css "* ]]
+    [[ $output == *" cookie=None"* ]]
+    [[ $output != *"session_id=fromodoo"* ]]
+}
+
+@test "any other path keeps the cookie both ways" {
+    run curl -sk -D - -H 'Cookie: session_id=secret' https://127.0.0.1/web/login
+    [[ $output == *" cookie=session_id=secret"* ]]
+    [[ $output == *"session_id=fromodoo"* ]]
+}
+
+@test "with the replica mark, a bundle is the notice of the replica too" {
+    touch /run/keel-odoo/replica
+    run curl -sk https://127.0.0.1/web/assets/ae9bb10/web.assets_frontend.min.css
+    rm -f /run/keel-odoo/replica
+    [[ $output == *"This node is the replica of a cloud pair."* ]]
+}
+
 @test "a client cannot set the protocol that Odoo sees" {
     run curl -s -H 'X-Forwarded-Proto: https' "http://$(host_ip)/web/login"
     [[ $output == *"proto=http "* ]]
@@ -231,4 +291,64 @@ host_ip() {
     run curl -s --unix-socket /run/nginx/keel-app.sock http://odoo.test/web/login
     rm -f /run/keel-odoo/replica
     [[ $output == *"This node is the replica of a cloud pair."* ]]
+}
+
+# The front of the cloud modes: a bundle that Anubis let through and that
+# Odoo marked immutable is stored, and the next request gets it from the
+# cache without Anubis. The challenge, a reply that sets a cookie, a query
+# string and a wrong hash are never stored (CT 9390, BR1, 2026-11-07).
+front_get() {
+    curl -s -D - -o /dev/null -w 'type=%{content_type}\n' "$@"
+}
+
+@test "behind Anubis, a cold cache gets the challenge and stores nothing" {
+    local url=http://127.0.0.1/web/assets/c01d0001/web.assets_frontend.min.css
+    run front_get -H 'X-Stub: challenge' "$url"
+    [[ $output == *"X-Keel-Cache: MISS"* ]]
+    [[ $output == *"type=text/html"* ]]
+    run front_get -H 'X-Stub: challenge' "$url"
+    [[ $output == *"X-Keel-Cache: MISS"* ]]
+    [[ $output == *"type=text/html"* ]]
+    run find /var/cache/nginx/keel-odoo-assets -type f
+    [ -z "$output" ]
+}
+
+@test "behind Anubis, a bundle that sets a cookie is not stored" {
+    local url=http://127.0.0.1/web/assets/c00c1e01/web.assets_frontend.min.css
+    run front_get -H 'X-Stub: cookie' "$url"
+    [[ $output == *"type=text/css"* ]]
+    run front_get -H 'X-Stub: challenge' "$url"
+    [[ $output == *"X-Keel-Cache: MISS"* ]]
+    [[ $output == *"type=text/html"* ]]
+}
+
+@test "behind Anubis, a stored bundle comes from the cache, without Anubis" {
+    local url=http://127.0.0.1/web/assets/a11ce001/web.assets_frontend.min.css
+    run front_get "$url"
+    [[ $output == *"X-Keel-Cache: MISS"* ]]
+    run front_get -H 'X-Stub: challenge' "$url"
+    [[ $output == *"X-Keel-Cache: HIT"* ]]
+    [[ $output == *"type=text/css"* ]]
+    [[ $output != *"Set-Cookie"* ]]
+    # the key has the host: another address is a miss
+    run front_get -H 'X-Stub: challenge' -H 'Host: other.test' "$url"
+    [[ $output == *"X-Keel-Cache: MISS"* ]]
+    [[ $output == *"type=text/html"* ]]
+}
+
+@test "behind Anubis, a query string or a wrong hash is not the cache's" {
+    # nginx matches the location without the query string: the cache is
+    # bypassed, and nothing is stored
+    local url='http://127.0.0.1/web/assets/a11ce001/web.assets_frontend.min.css?x=1'
+    run front_get -H 'X-Stub: challenge' "$url"
+    [[ $output == *"X-Keel-Cache: BYPASS"* ]]
+    [[ $output == *"type=text/html"* ]]
+    run front_get "$url"
+    [[ $output == *"type=text/css"* ]]
+    run front_get -H 'X-Stub: challenge' "$url"
+    [[ $output == *"X-Keel-Cache: BYPASS"* ]]
+    [[ $output == *"type=text/html"* ]]
+    run front_get -H 'X-Stub: challenge' http://127.0.0.1/web/assets/nothex1/web.assets_frontend.min.css
+    [[ $output != *"X-Keel-Cache"* ]]
+    [[ $output == *"type=text/html"* ]]
 }

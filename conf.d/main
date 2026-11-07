@@ -130,6 +130,13 @@ trap - EXIT
 # boot hook has written /var/lib/keel-odoo/ready.
 systemctl enable odoo.service
 
+# The cache of the asset bundles (conf.d/keel-odoo.conf of Nginx). Nginx
+# makes no parent of a cache path, and /var/cache/nginx is not in the
+# image: `nginx -t` failed with "mkdir() failed" (CT 9390, 2026-11-07).
+# The workers of Nginx write it.
+install -d -m 0755 /var/cache/nginx
+install -d -o www-data -g www-data -m 0700 /var/cache/nginx/keel-odoo-assets
+
 # The front site of Keel Web must include keel-front.d, so an upload is not
 # stopped at 1 MB behind Anubis. Since keel-web 0.4.0 (decision 0079) each
 # server of the front includes a snippet, and the snippet includes the

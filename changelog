@@ -1,3 +1,26 @@
+keel-odoo-19.0 (17) keel; urgency=medium
+
+  * Behind Anubis (the cloud modes) the front of Nginx serves the hashed
+    asset bundles of Odoo, /web/assets/[WEBSITE/]HASH/BUNDLE.css or .js,
+    from a cache. Anubis answered a request without its cookie with the
+    challenge page, also for a style sheet, and the challenge deletes the
+    browser's pass: a cross-site page, an old backend tab or a changed
+    policy got HTML for its CSS (CT 9390, BR1, 2026-11-07). A miss goes
+    through Anubis as before. Only a reply that Odoo marked immutable and
+    that sets no cookie is stored, so the challenge is never stored. The
+    key is the host and the URI. A bundle with a query string bypasses the
+    cache: Nginx matches a location without it.
+    keel-front.d/61-keel-odoo-assets.conf.
+  * keel-default.d/59-keel-odoo-assets.conf, before the catch-all of
+    60-keel-odoo.conf: Odoo gets no Cookie for a bundle and the client
+    gets no Set-Cookie, so a bundle is the same public bytes for every
+    user and the session of a user never goes into the cache.
+  * conf.d/main makes /var/cache/nginx/keel-odoo-assets (www-data, 0700),
+    and conf.d/zz-check fails the build without the two files or the
+    directory.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Sat, 07 Nov 2026 12:00:00 +0000
+
 keel-odoo-19.0 (16) keel; urgency=medium
 
   * The services screen names the Odoo series, "Odoo 18.0". The image is
