@@ -1,0 +1,180 @@
+# The commissioning contract of keel-core (handbook decision 0075). The
+# shared runner, bin/keel-commission of Keel-Linux/.github, reads it. It makes
+# a container from the template on a Proxmox host as an operator does,
+# answers the first boot, and then checks what this file says. The CI job
+# "commission / contract" checks only that this file is valid.
+#
+# A new first boot question or a new secret is a change of this file in the
+# same pull request (0075, Consequences).
+contract: 1
+appliance: core
+secrets: [root]
+# The prompts are the titles on the screen of keel-init. A password menu of
+# the same title (Generate or Manual) gets Manual from the runner, then the
+# answer goes into the password box and its confirmation.
+questions:
+  - id: root_password
+    hook: 30rootpass
+    prompt: Root Password
+    answer: secret:root
+  # The Mode screen of decision 0076, the first step of 75keel-role.
+  # Simple is its first entry. A described installation.mode skips it.
+  - id: mode
+    hook: 75keel-role
+    prompt: Installation mode
+    type: choice
+    answer: '{ret}'
+  - id: alert_email
+    hook: 85secalerts
+    prompt: System Notifications
+    answer: admin@example.org
+# keel/instance.example.yaml of keel-core, with the secret of the run and no
+# instance name: the machine keeps the name that pct create gave it
+instance:
+  version: 1
+  network:
+    managed_by: host
+    interfaces:
+      eth0:
+        ipv6:
+          method: auto
+  tls:
+    acme:
+      enabled: false
+  appliance:
+    name: core
+  installation:
+    mode: simple
+  overlays:
+    installer: enabled
+    wireguard: disabled
+    etcd: disabled
+    crowdsec: disabled
+    vip: disabled
+  secrets:
+    root_password: secret:root
+  hub:
+    api_key: skip
+  security:
+    alerts: admin@example.org
+    updates_at_first_boot: skip
+  first_login_wizard: false
+proofs:
+  - {secret: root, kind: shadow, user: root}
+  # postfix may send off the machine: the core layer of 2026-11-06 had
+  # "inet_protocols = " (empty), and the alert mail stayed deferred ("all
+  # network protocols are disabled", BR2). The command runs as root.
+  - secret: root
+    kind: command
+    run: 'test "$(postconf -h inet_protocols)" = all && ! postqueue -p | grep -q "network protocols are disabled"'
+# The processes of the manifest (packages/keel-core/manifest.yaml), and
+# Monit, which runs the checks that keel derives from the manifests
+services: [ssh, webmin, postfix, cron, monit]
+urls:
+  - {url: 'https://127.0.0.1:12321/', status: 200}
+forbidden:
+  # the build tools of a layer stay on the build host
+  - {kind: path, name: /usr/local/lib/keel-build}
+  # Core has no web server and no database: Web and the stacks add them
+  - {kind: path, name: /usr/sbin/nginx}
+  - {kind: path, name: /usr/sbin/mariadbd}
+# The web pages of the gallery (decisions 0075 and 0077): Core has one web
+# interface, Webmin, before and after the login with the root secret.
+screenshots:
+  - name: webmin
+    port: 12321
+    url: /
+    login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
+    wait: 8
+    # the shot waits for the dashboard, which comes after the page
+    # (VMs of BR2, 2026-11-06)
+    text: System hostname
+
+# The cloud modes (decision 0076): cloud simple is a primary on BR1 and a
+# replica on BR2. The prompts are the titles of the confconsole screens,
+# which are data here: a new title is a change of this file, not of
+# keel-commission. A node's answer of the id mode replaces the question
+# mode above (keel-commission, .github#45). The vm-iso pass takes the
+# default screens of tkl-installer (no vm section).
+cloud:
+  capture:
+    # keel1: an invite without a VIP, keel2: one that carries it (keel 0.23.83)
+    invite: 'keel[12]:[A-Za-z0-9_.~+/=-]+'
+  # the screens on which a node waits for another: no key while they are up
+  waits: [Waiting for the nodes]
+  # the proofs across the pair. Core pairs no service: keel mesh invite says
+  # "This node pairs nothing, so the line carries no service address", and
+  # keel vip status says "vip: none" on both nodes (BR1 and BR2,
+  # 2026-11-06). Cloud simple of Core is the mesh: each node has the other
+  # as its WireGuard peer, with a recent handshake, and the overlay
+  # carries traffic across the sites.
+  # modes: a check runs only in the cloud modes it names; one without
+  # modes runs in both (keel-commission of Keel-Linux/.github)
+  checks:
+    - {id: mesh-peer, at: all, run: 'keel mesh status', match: 'handshake [0-9]+ s ago', count: 2, modes: [cloud_simple]}
+    - id: mesh-ping
+      at: all
+      run: 'ping -6 -c 3 -W 5 "$(wg show wg0 allowed-ips | awk "{print \$2}" | cut -d/ -f1)"'
+      match: ' 0% packet loss'
+      count: 2
+      modes: [cloud_simple]
+    - {id: mesh-peer, at: all, run: 'keel mesh status', match: 'peers: 2', count: 3, modes: [cloud_advanced]}
+    - id: mesh-ping
+      at: all
+      run: 'for a in $(wg show wg0 allowed-ips | awk "{print \\$2}" | cut -d/ -f1); do ping -6 -c 3 -W 5 "$a" | grep -q " 0% packet loss" || exit 1; done; echo all-answer'
+      match: '^all-answer$'
+      count: 3
+      modes: [cloud_advanced]
+    - {id: voters, at: all, run: 'keel mesh status --json | grep -o "\"healthy_voters\": *[0-9]*"', match: ': *3$', count: 3, modes: [cloud_advanced]}
+    - {id: no-vip, at: all, run: 'keel vip status', match: 'vip: none'}
+    # no unit failed on either node: the cloud modes start overlays (anubis,
+    # coraza, crowdsec, syncthing) that services: does not name
+    - {id: no-failed-units, at: all, run: 'systemctl --failed --no-legend --plain | wc -l', match: '^0$'}
+nodes:
+  - name: primary
+    site: br1
+    mode: cloud_simple
+    role: primary
+    # the hotkeys of the menus (the first letter of an item): an arrow key is
+    # an escape sequence, and the console of a container can hand dialog its
+    # ESC alone, which cancels the screen (BR1, 2026-11-06)
+    answers:
+      - {id: mode, prompt: Installation mode, keys: 'C{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'P{ret}'}
+      - {id: invite, prompt: Invite a node, keys: '{ret}'}
+  - name: replica
+    site: br2
+    mode: cloud_simple
+    role: replica
+    answers:
+      - {id: mode, prompt: Installation mode, keys: 'C{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'R{ret}'}
+      - {id: join, prompt: Join a mesh, keys: '{invite:1}{ret}'}
+  # cloud advanced (decision 0076): the primary and the Keel Core witness
+  # on BR1, the replica on BR2 while BR3 is down. The names differ from the
+  # nodes of cloud simple: a record names each check NODE:CHECK.
+  - name: adv-primary
+    site: br1
+    mode: cloud_advanced
+    role: primary
+    answers:
+      - {id: mode, prompt: Installation mode, keys: 'CC{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'P{ret}'}
+      - {id: invite, prompt: Invite a node, keys: '{ret}'}
+      - {id: invite2, prompt: Invite a node, keys: '{ret}'}
+  - name: adv-replica
+    site: br2
+    mode: cloud_advanced
+    role: replica
+    answers:
+      - {id: mode, prompt: Installation mode, keys: 'CC{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'R{ret}'}
+      - {id: join, prompt: Join a mesh, keys: '{invite:1}{ret}'}
+  - name: witness
+    site: br1
+    mode: cloud_advanced
+    role: witness
+    answers:
+      - {id: mode, prompt: Installation mode, keys: 'CC{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'W{ret}'}
+      - {id: join, prompt: Join a mesh, keys: '{invite:2}{ret}'}
