@@ -144,6 +144,13 @@ cloud:
     - {id: files-sent, at: primary, run: 'k=$(cat /var/lib/keel/filesync/apikey); curl -s -H "X-API-Key: $k" http://127.0.0.1:8384/rest/config/folders', match: 'sendonly'}
     - {id: odoo-on-primary, at: primary, run: 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login', match: '^200$'}
     - {id: replica-notice, at: replica, run: 'curl -sk https://127.0.0.1/web/login', match: 'This node is the replica of a cloud pair.'}
+    # the semi-synchronous fallback (keel 0.23.88): with the standby's server
+    # stopped, a write on the primary still finishes; monit is stopped too, so
+    # nothing starts the server again during the check
+    - {id: standby-stopped, at: replica, run: 'systemctl stop monit; systemctl stop postgresql; systemctl is-active postgresql@17-main || echo stopped', match: 'stopped'}
+    - {id: write-without-standby, at: primary, run: 'timeout 180 runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "CREATE TABLE IF NOT EXISTS kc_async (v int); INSERT INTO kc_async VALUES (1)" && echo written', match: '^written$'}
+    - {id: standby-back, at: replica, run: 'systemctl start postgresql; systemctl start monit; for i in $(seq 60); do s=$(runuser -u postgres -- psql -Atc "SELECT status FROM pg_stat_wal_receiver" 2>/dev/null); [ "$s" = streaming ] && break; sleep 3; done; echo $s', match: '^streaming$'}
+    - {id: async-row-replicated, at: replica, run: 'for i in $(seq 30); do v=$(runuser -u postgres -- psql -d postgres -Atc "SELECT count(*) FROM kc_async" 2>/dev/null); [ "$v" = 1 ] && break; sleep 2; done; echo $v', match: '^1$'}
     - {id: promote, at: replica, run: 'keel vip promote'}
     - {id: promoted-holder, at: replica, run: 'keel vip status', match: 'carried here: yes'}
     # serve.py starts Odoo on the promoted node: the warm start takes seconds
@@ -155,7 +162,7 @@ cloud:
     - {id: return, at: primary, run: 'keel vip promote'}
     - {id: returned-holder, at: primary, run: 'keel vip status', match: 'carried here: yes'}
     - {id: odoo-returned, at: primary, run: 'for i in $(seq 60); do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login); [ "$c" = 200 ] && break; sleep 2; done; echo $c', match: '^200$'}
-    - {id: probe-dropped, at: primary, run: 'runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "DROP TABLE kc_probe"'}
+    - {id: probe-dropped, at: primary, run: 'runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "DROP TABLE kc_probe; DROP TABLE IF EXISTS kc_async"'}
 nodes:
   - name: primary
     site: br1
