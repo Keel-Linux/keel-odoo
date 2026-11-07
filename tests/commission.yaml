@@ -131,8 +131,12 @@ cloud:
   # the primary and read on the standby, the filestore folder types of
   # Syncthing, Odoo serving on the node that holds the VIP, and a promote
   # and its return
+  # modes: a check runs only in the cloud modes it names; one without
+  # modes runs in both (keel-commission of Keel-Linux/.github)
   checks:
     - {id: vip-holder, at: all, run: 'keel vip status', match: 'carried here: yes', count: 1}
+    - {id: voters, at: all, run: 'keel mesh status --json | grep -o "\"healthy_voters\": *[0-9]*"', match: ': *3$', count: 3, modes: [cloud_advanced]}
+    - {id: witness-no-data, at: witness, run: 'test ! -e /var/lib/postgresql/17/main && test ! -e /opt/odoo && echo nodata', match: '^nodata$', modes: [cloud_advanced]}
     # the standby is a copy of the primary, made before the pair formed:
     # the same cluster (system identifier) and the primary's first boot
     # data (a MariaDB replica was not seeded, keel-lnmp BR1/BR2 2026-11-06)
@@ -147,22 +151,23 @@ cloud:
     # the semi-synchronous fallback (keel 0.23.88): with the standby's server
     # stopped, a write on the primary still finishes; monit is stopped too, so
     # nothing starts the server again during the check
-    - {id: standby-stopped, at: replica, run: 'systemctl stop monit; systemctl stop postgresql; systemctl is-active postgresql@17-main || echo stopped', match: 'stopped'}
-    - {id: write-without-standby, at: primary, run: 'timeout 180 runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "CREATE TABLE IF NOT EXISTS kc_async (v int); INSERT INTO kc_async VALUES (1)" && echo written', match: '^written$'}
-    - {id: standby-back, at: replica, run: 'systemctl start postgresql; systemctl start monit; for i in $(seq 60); do s=$(runuser -u postgres -- psql -Atc "SELECT status FROM pg_stat_wal_receiver" 2>/dev/null); [ "$s" = streaming ] && break; sleep 3; done; echo $s', match: '^streaming$'}
-    - {id: async-row-replicated, at: replica, run: 'for i in $(seq 30); do v=$(runuser -u postgres -- psql -d postgres -Atc "SELECT count(*) FROM kc_async" 2>/dev/null); [ "$v" = 1 ] && break; sleep 2; done; echo $v', match: '^1$'}
-    - {id: promote, at: replica, run: 'keel vip promote'}
-    - {id: promoted-holder, at: replica, run: 'keel vip status', match: 'carried here: yes'}
+    - {id: standby-stopped, at: replica, run: 'systemctl stop monit; systemctl stop postgresql; systemctl is-active postgresql@17-main || echo stopped', match: 'stopped', modes: [cloud_simple]}
+    - {id: write-without-standby, at: primary, run: 'timeout 180 runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "CREATE TABLE IF NOT EXISTS kc_async (v int); INSERT INTO kc_async VALUES (1)" && echo written', match: '^written$', modes: [cloud_simple]}
+    - {id: standby-back, at: replica, run: 'systemctl start postgresql; systemctl start monit; for i in $(seq 60); do s=$(runuser -u postgres -- psql -Atc "SELECT status FROM pg_stat_wal_receiver" 2>/dev/null); [ "$s" = streaming ] && break; sleep 3; done; echo $s', match: '^streaming$', modes: [cloud_simple]}
+    - {id: async-row-replicated, at: replica, run: 'for i in $(seq 30); do v=$(runuser -u postgres -- psql -d postgres -Atc "SELECT count(*) FROM kc_async" 2>/dev/null); [ "$v" = 1 ] && break; sleep 2; done; echo $v', match: '^1$', modes: [cloud_simple]}
+    - {id: promote, at: replica, run: 'keel vip promote', modes: [cloud_simple]}
+    - {id: promoted-holder, at: replica, run: 'keel vip status', match: 'carried here: yes', modes: [cloud_simple]}
     # serve.py starts Odoo on the promoted node: the warm start takes seconds
-    - {id: odoo-on-promoted, at: replica, run: 'for i in $(seq 60); do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login); [ "$c" = 200 ] && break; sleep 2; done; echo $c', match: '^200$'}
+    - {id: odoo-on-promoted, at: replica, run: 'for i in $(seq 60); do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login); [ "$c" = 200 ] && break; sleep 2; done; echo $c', match: '^200$', modes: [cloud_simple]}
     # the old primary follows the promoted node before the VIP goes back: a
     # return before it has rejoined leaves the pair with no writable server
     # (keel 0.23.84, keel-lnpp BR1/BR2 2026-11-06)
-    - {id: rejoined, at: primary, run: 'for i in $(seq 60); do s=$(runuser -u postgres -- psql -Atc "SELECT status FROM pg_stat_wal_receiver"); [ "$s" = streaming ] && break; sleep 3; done; echo $s', match: '^streaming$'}
-    - {id: return, at: primary, run: 'keel vip promote'}
-    - {id: returned-holder, at: primary, run: 'keel vip status', match: 'carried here: yes'}
-    - {id: odoo-returned, at: primary, run: 'for i in $(seq 60); do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login); [ "$c" = 200 ] && break; sleep 2; done; echo $c', match: '^200$'}
-    - {id: probe-dropped, at: primary, run: 'runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "DROP TABLE kc_probe; DROP TABLE IF EXISTS kc_async"'}
+    - {id: rejoined, at: primary, run: 'for i in $(seq 60); do s=$(runuser -u postgres -- psql -Atc "SELECT status FROM pg_stat_wal_receiver"); [ "$s" = streaming ] && break; sleep 3; done; echo $s', match: '^streaming$', modes: [cloud_simple]}
+    - {id: return, at: primary, run: 'keel vip promote', modes: [cloud_simple]}
+    - {id: returned-holder, at: primary, run: 'keel vip status', match: 'carried here: yes', modes: [cloud_simple]}
+    - {id: odoo-returned, at: primary, run: 'for i in $(seq 60); do c=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login); [ "$c" = 200 ] && break; sleep 2; done; echo $c', match: '^200$', modes: [cloud_simple]}
+    - {id: probe-dropped, at: primary, run: 'runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "DROP TABLE kc_probe; DROP TABLE IF EXISTS kc_async"', modes: [cloud_simple]}
+    - {id: probe-dropped, at: primary, run: 'runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -qc "DROP TABLE kc_probe"', modes: [cloud_advanced]}
 nodes:
   - name: primary
     site: br1
@@ -195,3 +200,42 @@ nodes:
         # the dashboard of Webmin draws after the login; 8 s took a half
         # drawn page on a busy VM of BR2 (vm-iso, 2026-11-06)
         wait: 20
+  # cloud advanced (decision 0076): the primary and the Keel Core witness
+  # on BR1, the replica on BR2 while BR3 is down. The names differ from the
+  # nodes of cloud simple: a record names each check NODE:CHECK.
+  - name: adv-primary
+    site: br1
+    mode: cloud_advanced
+    role: primary
+    answers:
+      - {id: mode, prompt: Installation mode, keys: 'CC{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'P{ret}'}
+      - {id: invite, prompt: Invite a node, keys: '{ret}'}
+      - {id: invite2, prompt: Invite a node, keys: '{ret}'}
+  - name: adv-replica
+    site: br2
+    mode: cloud_advanced
+    role: replica
+    answers:
+      - {id: mode, prompt: Installation mode, keys: 'CC{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'R{ret}'}
+      - {id: join, prompt: Join a mesh, keys: '{invite:1}{ret}'}
+    screenshots:
+      - {name: odoo, url: /web/login, text: This node is the replica of a cloud pair., wait: 8}
+      - name: webmin
+        port: 12321
+        url: /
+        login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
+        wait: 20
+  - name: witness
+    site: br1
+    mode: cloud_advanced
+    role: witness
+    # the witness is a node of keel-core, with the contract of keel-core
+    # (a copy of its tests/commission.yaml): the image of keel-core is a new
+    # build for each release, so the run gives it as KC_IMAGE_WITNESS
+    contract: commission-core.yaml
+    answers:
+      - {id: mode, prompt: Installation mode, keys: 'CC{ret}'}
+      - {id: role, prompt: Role of this node, keys: 'W{ret}'}
+      - {id: join, prompt: Join a mesh, keys: '{invite:2}{ret}'}
