@@ -34,7 +34,12 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../overlay/etc/nginx/keel-default.d/60-keel-odoo.conf" \
         "$T/etc/nginx/keel-default.d/"
     for name in core web lnpp odoo; do : > "$T/usr/share/keel/appliances/$name.yaml"; done
-    printf 'root:x:0:0:root:/root:/bin/bash\nodoo:x:998:998::/var/lib/odoo:/usr/sbin/nologin\n' > "$T/etc/passwd"
+    : > "$T/etc/nginx/keel-front.d/61-keel-odoo-assets.conf"
+    : > "$T/etc/nginx/keel-default.d/59-keel-odoo-assets.conf"
+    mkdir -p "$T/var/cache/nginx/keel-odoo-assets"
+    # the owner of the scratch tree stands for www-data
+    printf 'root:x:0:0:root:/root:/bin/bash\nodoo:x:998:998::/var/lib/odoo:/usr/sbin/nologin\nwww-data:x:%s:%s::/var/www:/usr/sbin/nologin\n' \
+        "$(id -u)" "$(id -g)" > "$T/etc/passwd"
 }
 
 @test "a good tree passes" {
@@ -256,4 +261,32 @@ setup() {
     printf 'keel-check:x:997:997::/nonexistent:/usr/sbin/nologin\n' >> "$T/etc/passwd"
     run "$CHECK"
     [ "$status" -eq 0 ]
+}
+
+@test "no cache of the asset bundles in the front fails the build: behind Anubis a style sheet can get the challenge" {
+    rm "$T/etc/nginx/keel-front.d/61-keel-odoo-assets.conf"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"the cache of the asset bundles is not in keel-front.d"* ]]
+}
+
+@test "no route of the asset bundles fails the build: Odoo would set a cookie, and nothing is stored" {
+    rm "$T/etc/nginx/keel-default.d/59-keel-odoo-assets.conf"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"the route of the asset bundles is not in keel-web's include directory"* ]]
+}
+
+@test "no cache directory fails the build: nginx -t would fail" {
+    rmdir "$T/var/cache/nginx/keel-odoo-assets"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/var/cache/nginx/keel-odoo-assets is not in the image"* ]]
+}
+
+@test "a cache directory that www-data does not own fails the build" {
+    sed -i 's/^www-data:x:[0-9]*:/www-data:x:4242:/' "$T/etc/passwd"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"is not owned by www-data"* ]]
 }
