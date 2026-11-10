@@ -19,9 +19,11 @@
 #   calls of Odoo.
 # - The Nginx route is in keel-web's include directory.
 # - The cache of the asset bundles, its route and its directory are there.
-# - The check page of lnpp (its hook, route, application and socket) is
-#   not in the image.
+# - The check page of lnpp (its hook, route, application, socket, service
+#   unit and user) is not in the image.
 # - odoo.yaml is the one appliance manifest that no other is built on.
+# - Each path that odoo.yaml replicates is a directory of the image, and
+#   odoo owns the filestore.
 #
 # KEEL_CONF_ROOT is the tree to work on, empty (the chroot's /) in a build;
 # tests/image-check.bats sets it to a scratch tree.
@@ -132,14 +134,42 @@ for path in /usr/lib/inithooks/firstboot.d/40lnpp-check \
         /etc/nginx/keel-default.d/50-keel-lnpp.conf \
         /usr/share/keel-lnpp \
         /usr/lib/systemd/system/keel-lnpp-check.socket \
+        /usr/lib/systemd/system/keel-lnpp-check.service \
         "$WANTS/sockets.target.wants/keel-lnpp-check.socket"; do
     if [ -e "$root$path" ] || [ -L "$root$path" ]; then
         fatal "$path is in the image: the check page of lnpp is not part of Odoo"
     fi
 done
+if grep -q '^keel-check:' "$root/etc/passwd" 2>/dev/null; then
+    fatal "keel-check is a user of the image: the check page of lnpp is not part of Odoo"
+fi
 
-if [ ! -f "$root$APPLIANCES/odoo.yaml" ]; then
+# On a pair, keel writes the marker of a file sync folder only where the
+# path is there, and the file sync unit can write only a path that is there
+# when the unit starts. A path that Odoo makes later leaves the folder in
+# error ("folder path missing", release A3, 2026-11-10). Odoo writes the
+# filestore, so odoo owns it.
+manifest="$root$APPLIANCES/odoo.yaml"
+if [ ! -f "$manifest" ]; then
     fatal "$APPLIANCES/odoo.yaml is not in the image"
+else
+    # an entry is a path or a mapping {path: P, unless: S}
+    if ! replicated="$(python3 -c 'import sys, yaml
+state = (yaml.safe_load(open(sys.argv[1])) or {}).get("state") or {}
+print("\n".join(e["path"] if isinstance(e, dict) else e
+                for e in state.get("replicate") or []))' "$manifest" 2>/dev/null)"; then
+        fatal "$APPLIANCES/odoo.yaml: state.replicate cannot be read"
+    fi
+    for path in $replicated; do
+        if [ ! -d "$root$path" ]; then
+            fatal "$path is not a directory of the image: odoo.yaml replicates it, and the file sync folder of a pair would be in error"
+        fi
+    done
+fi
+filestore=/var/lib/odoo/filestore
+if [ -d "$root$filestore" ] \
+        && [ "$(stat -c %u "$root$filestore")" != "$(awk -F: '$1 == "odoo" { print $3 }' "$root/etc/passwd")" ]; then
+    fatal "$filestore is not owned by odoo: Odoo cannot write a file"
 fi
 for name in postgresql mariadb; do
     if [ -e "$root$APPLIANCES/$name.yaml" ]; then

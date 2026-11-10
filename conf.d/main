@@ -121,6 +121,14 @@ ON CONFLICT (key) DO UPDATE SET value = 'http://127.0.0.1:8069';
 SQL
 # The files that the installation left are orphans now.
 rm -rf /var/lib/odoo/filestore /var/lib/odoo/sessions
+# The filestore stays in the image, empty. On a pair, keel writes the marker
+# of a file sync folder only where the path is there, and the file sync unit
+# can write only a path that is there when the unit starts. Odoo makes its
+# filestore at the first file it stores, and that is too late: the folder
+# was in error ("folder path missing"), keel sent a critical alert, and the
+# standby could not receive a file (release A3, the two Odoo pairs,
+# 2026-11-10). conf.d/zz-check requires each path that odoo.yaml replicates.
+install -d -o odoo -g odoo -m 0750 /var/lib/odoo/filestore
 
 pg_ctlcluster "$PGVER" main stop
 trap - EXIT
@@ -156,21 +164,26 @@ SNIPPET=/etc/nginx/snippets/keel-web-front.conf
 # hook makes a test database, keel_check, and its page /keel-check/ shows
 # the stack to anybody who asks (the commissioning test found both on BR1
 # and BR2, 2026-11-06). They are the parent layer's, so they are removed
-# here: the hook, the route, the application, and the socket that lnpp
-# enabled, so nothing starts the page. The deck build records each removal
-# as a whiteout of this layer, and keel assemble removes the path from the
-# image. conf.d/zz-check proves that none is left.
+# here: the hook, the route, the application, the socket that lnpp
+# enabled, the service unit and its user keel-check. The deck build records
+# each removal as a whiteout of this layer, and keel assemble removes the
+# path from the image. conf.d/zz-check proves that none is left.
 #
-# keel-lnpp-check.service and its user keel-check stay: lnpp's manifest
-# names the page as a process with that unit, and keel refuses a chain
-# whose unit is not there. With no socket and no route nothing starts it.
-# The preset file of lnpp stays too: it disables the WAL archival of
+# Until keel-lnpp 19.0-9 lnpp's manifest named the page as a process with
+# the unit keel-lnpp-check.service, so the unit had to stay, and nothing
+# could start it: Monit sent a critical alert on each Odoo node, and then
+# stopped the watch (release A3, 2026-11-10). lnpp's manifest names no such
+# process now. On an older lnpp, `keel manifest validate` below stops the
+# build, because keel refuses a chain whose unit is not there.
+# The preset file of lnpp stays: it disables the WAL archival of
 # postgresql-common.
 systemctl disable keel-lnpp-check.socket
 rm -rf /usr/lib/inithooks/firstboot.d/40lnpp-check \
     /etc/nginx/keel-default.d/50-keel-lnpp.conf \
     /usr/share/keel-lnpp \
-    /usr/lib/systemd/system/keel-lnpp-check.socket
+    /usr/lib/systemd/system/keel-lnpp-check.socket \
+    /usr/lib/systemd/system/keel-lnpp-check.service
+userdel keel-check
 
 # The appliance manifest, validated and resolved along lnpp, web and core on
 # this very tree, so a manifest the booted machine would refuse fails the

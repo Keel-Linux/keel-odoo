@@ -97,6 +97,7 @@ forbidden:
   - {kind: path, name: /etc/nginx/keel-default.d/50-keel-lnpp.conf}
   - {kind: path, name: /usr/share/keel-lnpp}
   - {kind: path, name: /usr/lib/systemd/system/keel-lnpp-check.socket}
+  - {kind: path, name: /usr/lib/systemd/system/keel-lnpp-check.service}
 # The web pages of the gallery (decision 0077): the Odoo login, the app
 # after the login with the app secret, and Webmin before and after the
 # login with the root secret.
@@ -146,6 +147,25 @@ cloud:
     - {id: replica-in-recovery, at: replica, run: 'runuser -u postgres -- psql -d postgres -Atc "SELECT pg_is_in_recovery()"', match: '^t$'}
     - {id: files-follow, at: replica, run: 'k=$(cat /var/lib/keel/filesync/apikey); curl -s -H "X-API-Key: $k" http://127.0.0.1:8384/rest/config/folders', match: 'receiveonly'}
     - {id: files-sent, at: primary, run: 'k=$(cat /var/lib/keel/filesync/apikey); curl -s -H "X-API-Key: $k" http://127.0.0.1:8384/rest/config/folders', match: 'sendonly'}
+    # Monit watches no unit of lnpp's check page: until keel-lnpp 19.0-9 the
+    # manifest of lnpp named the page as a process, Odoo removes the page,
+    # and Monit sent a critical alert on each node, then stopped the watch
+    # (release A3, 2026-11-10)
+    - {id: monit-no-check-page, at: 'primary,replica', run: 'f=/etc/keel/monit/keel-manifest.conf; [ -s $f ] && ! grep -q keel-lnpp-check $f && echo clean', match: '^clean$'}
+    # each file sync folder of each node has no error: with no filestore in
+    # the image the folder was in error on the two nodes, "folder path
+    # missing", and keel sent a critical alert (release A3, 2026-11-10). The
+    # output is one line, the count of the folders with an empty error. The
+    # chain replicates three paths: /var/www/keel-default of keel-web, and
+    # the filestore and the run-time addons of odoo.yaml. A count that is not
+    # three is a folder that is not there or a status that has no answer
+    - {id: folders-ok, at: 'primary,replica', run: 'k=$(cat /var/lib/keel/filesync/apikey); a=http://127.0.0.1:8384/rest; for id in $(curl -s -H "X-API-Key: $k" $a/config/folders | grep -o "\"id\": *\"keel-[0-9a-f]*\"" | grep -o "keel-[0-9a-f]*"); do curl -s -H "X-API-Key: $k" "$a/db/status?folder=$id" | grep -o "\"error\": *\"[^\"]*\""; done | sort | uniq -c | tr -s " \n" " "', match: '^ ?3 "error": "" ?$'}
+    # a file that Odoo's user writes in the filestore of the primary comes to
+    # the replica, and odoo owns it and its directory there, so Odoo can
+    # write after a promotion
+    - {id: file-written, at: primary, run: 'runuser -u odoo -- sh -c "mkdir -p /var/lib/odoo/filestore/kc && echo 42 > /var/lib/odoo/filestore/kc/probe" && echo written', match: '^written$'}
+    - {id: file-replicated, at: replica, run: 'f=/var/lib/odoo/filestore/kc/probe; for i in $(seq 60); do [ -f $f ] && break; sleep 2; done; echo "$(cat $f) $(stat -c %U ${f%/*} $f | tr "\n" " ")"', match: '^42 odoo odoo ?$'}
+    - {id: file-removed, at: primary, run: 'rm -rf /var/lib/odoo/filestore/kc; [ ! -e /var/lib/odoo/filestore/kc ] && echo removed', match: '^removed$'}
     - {id: odoo-on-primary, at: primary, run: 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8069/web/login', match: '^200$'}
     - {id: replica-notice, at: replica, run: 'curl -sk https://127.0.0.1/web/login', match: 'This node is the replica of a cloud pair.'}
     # the semi-synchronous fallback (keel 0.23.88): with the standby's server
