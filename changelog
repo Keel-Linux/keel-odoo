@@ -1,3 +1,33 @@
+keel-odoo-19.0 (18) keel; urgency=medium
+
+  * No false alert of the check page. Until keel-lnpp 19.0-9 the manifest
+    of lnpp named the check page as a process, and a layer cannot remove
+    a process it inherits. Odoo removes the page, so its service unit
+    stayed with nothing that could start it: on each node Monit sent the
+    critical alert "keel-lnpp-check fails its check", and then "monit
+    stopped watching it" (release A3, the two Odoo pairs, 2026-11-10).
+    This layer is built on keel-lnpp 19.0-9 or newer, and conf.d/main
+    removes the service unit and the user keel-check too.
+  * No file sync folder in error on a pair. The filestore,
+    /var/lib/odoo/filestore, is in the image now, empty, owned by odoo.
+    Odoo made it at the first file it stored. keel writes the marker of a
+    file sync folder only where the path is there, and the file sync unit
+    can write only a path that is there when the unit starts: the folder
+    was in error on the two nodes ("folder path missing"), keel sent a
+    critical alert, and the standby could not receive a file (release A3;
+    proved on CT 9364, BR1, and CT 9365, BR2, 2026-11-10).
+  * conf.d/zz-check fails the build when the service unit or the user of
+    the check page is in the image, when a path that odoo.yaml replicates
+    is not a directory of the image, and when odoo does not own the
+    filestore.
+  * tests/commission.yaml: the service unit of the check page is
+    forbidden. On a pair, Monit watches no unit of the check page, each
+    of the three file sync folders of each node has no error, and a file
+    that odoo writes in the filestore of the primary comes to the replica
+    with odoo as the owner of the file and of its directory.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Tue, 10 Nov 2026 04:45:00 +0000
+
 keel-odoo-19.0 (17) keel; urgency=medium
 
   * Behind Anubis (the cloud modes) the front of Nginx serves the hashed

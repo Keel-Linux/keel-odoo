@@ -19,8 +19,10 @@ What the layer adds to LNPP
   (``/etc/nginx/keel-default.d/60-keel-odoo.conf``). Nginx sends HTTP to
   ``127.0.0.1:8069`` and ``/websocket`` to ``127.0.0.1:8072``. Odoo runs
   with ``proxy_mode`` on. The check page ``/keel-check/`` of LNPP is not
-  in the image: ``conf.d/main`` removes its hook, route, application and
-  socket (handbook decision 0075).
+  in the image: ``conf.d/main`` removes its hook, route, application,
+  socket, service unit and user (handbook decision 0075).
+- An empty filestore, ``/var/lib/odoo/filestore``, that ``odoo`` owns. On
+  a pair the file sync needs each replicated path in the image.
 - A database role ``odoo`` with no password. Odoo connects on the unix
   socket and PostgreSQL authenticates the operating system user.
 - The first boot hook ``45odoo``. It sets the password of the ``admin``

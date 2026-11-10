@@ -33,13 +33,17 @@ setup() {
     cp "$BATS_TEST_DIRNAME/../overlay/etc/odoo/odoo.conf" "$T/etc/odoo/"
     cp "$BATS_TEST_DIRNAME/../overlay/etc/nginx/keel-default.d/60-keel-odoo.conf" \
         "$T/etc/nginx/keel-default.d/"
-    for name in core web lnpp odoo; do : > "$T/usr/share/keel/appliances/$name.yaml"; done
+    for name in core web lnpp; do : > "$T/usr/share/keel/appliances/$name.yaml"; done
+    # the real manifest: the check reads the paths it replicates
+    cp "$BATS_TEST_DIRNAME/../overlay/usr/share/keel/appliances/odoo.yaml" \
+        "$T/usr/share/keel/appliances/"
+    mkdir -p "$T/var/lib/odoo/filestore" "$T/opt/odoo/extra-addons"
     : > "$T/etc/nginx/keel-front.d/61-keel-odoo-assets.conf"
     : > "$T/etc/nginx/keel-default.d/59-keel-odoo-assets.conf"
     mkdir -p "$T/var/cache/nginx/keel-odoo-assets"
-    # the owner of the scratch tree stands for www-data
-    printf 'root:x:0:0:root:/root:/bin/bash\nodoo:x:998:998::/var/lib/odoo:/usr/sbin/nologin\nwww-data:x:%s:%s::/var/www:/usr/sbin/nologin\n' \
-        "$(id -u)" "$(id -g)" > "$T/etc/passwd"
+    # the owner of the scratch tree stands for odoo and for www-data
+    printf 'root:x:0:0:root:/root:/bin/bash\nodoo:x:%s:%s::/var/lib/odoo:/usr/sbin/nologin\nwww-data:x:%s:%s::/var/www:/usr/sbin/nologin\n' \
+        "$(id -u)" "$(id -g)" "$(id -u)" "$(id -g)" > "$T/etc/passwd"
 }
 
 @test "a good tree passes" {
@@ -255,10 +259,82 @@ setup() {
     [[ "$output" == *"sockets.target.wants/keel-lnpp-check.socket is in the image"* ]]
 }
 
-@test "the service unit of lnpp's check page passes: lnpp's manifest names it, and nothing starts it" {
+# Until keel-lnpp 19.0-9 lnpp's manifest named the page as a process, so its
+# service unit stayed in the Odoo image with nothing that could start it,
+# and Monit sent a critical alert on each node (release A3, 2026-11-10).
+@test "the service unit of lnpp's check page fails the build: nothing can start it" {
     mkdir -p "$T/usr/lib/systemd/system"
     : > "$T/usr/lib/systemd/system/keel-lnpp-check.service"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/usr/lib/systemd/system/keel-lnpp-check.service is in the image"* ]]
+}
+
+@test "the user of lnpp's check page fails the build: no process of Odoo runs as it" {
     printf 'keel-check:x:997:997::/nonexistent:/usr/sbin/nologin\n' >> "$T/etc/passwd"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"keel-check is a user of the image"* ]]
+}
+
+# keel writes the marker of a file sync folder only where the path is
+# there, and the file sync unit can write only a path that is there when
+# it starts. With no filestore in the image the folder of each node of a
+# pair was in error, "folder path missing" (release A3, 2026-11-10).
+@test "no filestore in the image fails the build: the file sync folder of a pair would be in error" {
+    rmdir "$T/var/lib/odoo/filestore"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/var/lib/odoo/filestore is not a directory of the image"* ]]
+    [[ "$output" != *"/opt/odoo/extra-addons"* ]]
+}
+
+@test "no directory of the run-time addons fails the build too: the manifest replicates it" {
+    rmdir "$T/opt/odoo/extra-addons"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/opt/odoo/extra-addons is not a directory of the image"* ]]
+}
+
+@test "a replicated path that is a file fails the build" {
+    rmdir "$T/opt/odoo/extra-addons" && : > "$T/opt/odoo/extra-addons"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/opt/odoo/extra-addons is not a directory of the image"* ]]
+}
+
+# keel's schema allows an entry {path: P, unless: S} beside a plain path.
+@test "a replicated path written as a mapping is required too" {
+    sed -i 's|^    - /opt/odoo/extra-addons$|    - {path: /opt/odoo/extra-addons, unless: database}|' \
+        "$T/usr/share/keel/appliances/odoo.yaml"
+    run "$CHECK"
+    [ "$status" -eq 0 ]
+    rmdir "$T/opt/odoo/extra-addons"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/opt/odoo/extra-addons is not a directory of the image"* ]]
+}
+
+@test "a manifest that cannot be read fails the build, and the later defects are reported too" {
+    printf 'state: [unclosed\n' > "$T/usr/share/keel/appliances/odoo.yaml"
+    : > "$T/usr/share/keel/appliances/postgresql.yaml"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"odoo.yaml: state.replicate cannot be read"* ]]
+    [[ "$output" == *"postgresql.yaml is in the image"* ]]
+    [[ "$output" != *"Traceback"* ]]
+}
+
+@test "a filestore that odoo does not own fails the build: Odoo could not write a file" {
+    sed -i 's/^odoo:x:[0-9]*:/odoo:x:4243:/' "$T/etc/passwd"
+    run "$CHECK"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"/var/lib/odoo/filestore is not owned by odoo"* ]]
+}
+
+@test "a manifest that replicates nothing passes: there is no path to require" {
+    sed -i '/^state:/,$d' "$T/usr/share/keel/appliances/odoo.yaml"
+    rmdir "$T/var/lib/odoo/filestore" "$T/opt/odoo/extra-addons"
     run "$CHECK"
     [ "$status" -eq 0 ]
 }
