@@ -60,10 +60,8 @@ jobs:
     # The boot test (org-plan section 1): the odoo layer is fetched from
     # https://mirror.keellinux.org/layers with lnpp, web and core under it,
     # verified, assembled, booted in LXC and checked by tests/boot-test.sh.
-    # The odoo layer is not published yet: its first images are testing
-    # pre-releases (decision 0052, section 8), which never reach the
-    # mirror. So allow_unpublished is true, and the workflow makes it an
-    # error once the mirror answers for odoo. The image build per merge
+    # The odoo layer is published (stable release 2026-11-10), so the job
+    # boots it. The image build per merge
     # (decision 0061) boots every image with this same test.
     if: vars.KEEL_LXC_RUNNER == 'true'
     runs-on: keel-lxc
@@ -71,7 +69,6 @@ jobs:
     with:
       appliance: odoo
       parent: lnpp
-      allow_unpublished: true
       timeout: 60
   commission:
     # The commissioning contract, tests/commission.yaml (handbook decision
