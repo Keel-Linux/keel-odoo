@@ -1,3 +1,13 @@
+keel-odoo-19.0 (19) keel; urgency=high
+
+  * A new build with keel-overlay-coraza 0.1.5 and keel-web 0.4.4 from the
+    Keel archive. keel-overlay-coraza 0.1.4 inspected a request body that
+    had no Content-Type header. One request with no login could make a
+    worker use more than 1 GB of memory. No other file of this repository
+    changed.
+
+ -- KeelLinux maintainers <admin@keellinux.org>  Thu, 12 Nov 2026 12:00:00 +0000
+
 keel-odoo-19.0 (18) keel; urgency=medium
 
   * No false alert of the check page. Until keel-lnpp 19.0-9 the manifest
