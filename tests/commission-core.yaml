@@ -78,17 +78,11 @@ forbidden:
   # Core has no web server and no database: Web and the stacks add them
   - {kind: path, name: /usr/sbin/nginx}
   - {kind: path, name: /usr/sbin/mariadbd}
-# The web pages of the gallery (decisions 0075 and 0077): Core has one web
-# interface, Webmin, before and after the login with the root secret.
-screenshots:
-  - name: webmin
-    port: 12321
-    url: /
-    login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
-    wait: 8
-    # the shot waits for the dashboard, which comes after the page
-    # (VMs of BR2, 2026-11-06)
-    text: System hostname
+# No web screenshot: Core has one web interface, Webmin, and it answers
+# only on the access network of the administrators (decision 0098, keel
+# >= 0.23.104, the manifest's expose: access). The runner reaches the
+# machine from outside, through the PVE host, where 12321 is closed. The
+# url above proves that Webmin answers on the machine.
 
 # The cloud modes (decision 0076): cloud simple is a primary on BR1 and a
 # replica on BR2. The prompts are the titles of the confconsole screens,

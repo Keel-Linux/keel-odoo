@@ -99,21 +99,14 @@ forbidden:
   - {kind: path, name: /usr/lib/systemd/system/keel-lnpp-check.socket}
   - {kind: path, name: /usr/lib/systemd/system/keel-lnpp-check.service}
 # The web pages of the gallery (decision 0077): the Odoo login, the app
-# after the login with the app secret, and Webmin before and after the
-# login with the root secret.
+# after the login with the app secret. Webmin is not shot: it answers only on the access network
+# (decision 0098), and the runner reaches the machine from outside.
 screenshots:
   - name: odoo
     url: /web/login
     after: /odoo
     login: {user_field: '#login', user: admin, password_field: '#password', secret: app, submit: 'button[type=submit]'}
     wait: 8
-  - name: webmin
-    port: 12321
-    url: /
-    login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
-    # the dashboard of Webmin draws after the login; 8 s took a half
-    # drawn page on a busy VM of BR2 (vm-iso, 2026-11-06)
-    wait: 20
 # The cloud modes (decision 0076): PostgreSQL is a replicating engine (the
 # pair of decisions 0054 and 0057), and the filestore follows the VIP. The
 # prompts are the titles of the confconsole screens, the shape of the
@@ -219,13 +212,6 @@ nodes:
     # the notice instead of a login (BR2, 2026-11-06)
     screenshots:
       - {name: odoo, url: /web/login, text: This node is the replica of a cloud pair., wait: 8}
-      - name: webmin
-        port: 12321
-        url: /
-        login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
-        # the dashboard of Webmin draws after the login; 8 s took a half
-        # drawn page on a busy VM of BR2 (vm-iso, 2026-11-06)
-        wait: 20
   # cloud advanced (decision 0076): the primary and the Keel Core witness
   # on BR1, the replica on BR2 while BR3 is down. The names differ from the
   # nodes of cloud simple: a record names each check NODE:CHECK.
@@ -248,11 +234,6 @@ nodes:
       - {id: join, prompt: Join a mesh, keys: '{invite:1}{ret}'}
     screenshots:
       - {name: odoo, url: /web/login, text: This node is the replica of a cloud pair., wait: 8}
-      - name: webmin
-        port: 12321
-        url: /
-        login: {user_field: 'input[name=user]', user: root, password_field: 'input[name=pass]', secret: root, submit: 'button[type=submit]'}
-        wait: 20
   - name: witness
     site: br1
     mode: cloud_advanced
