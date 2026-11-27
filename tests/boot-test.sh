@@ -80,7 +80,9 @@ for target in $(bt_spec_targets "$BT_ROOTFS"); do
     install -D -m 0600 "$BT_SPEC" "$target"
 done
 bt_spec_in_rootfs "$BT_SPEC" "$BT_ROOTFS" > "$container_dir/instance-host.yaml"
-keel spec apply --spec "$container_dir/instance-host.yaml" \
+# --root: the spec names the appliance, and the host does not hold its
+# manifest. The layer ships it, so keel reads it from the assembled rootfs.
+keel spec apply --spec "$container_dir/instance-host.yaml" --root "$BT_ROOTFS" \
     --conf "$BT_ROOTFS/etc/inithooks.conf" --non-interactive
 
 # The declared password, as the description names it. Everything below
