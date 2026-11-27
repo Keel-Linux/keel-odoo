@@ -323,8 +323,13 @@ ASSET_RX='^/web/assets/(?:[0-9]+/)?[0-9a-f]{7,}/[A-Za-z0-9_.-]+\.(?:css|js)$'
     run ! grep -q "keel-check" "$OVERLAY/etc/confconsole/services.txt"
 }
 
-@test "the spec of the boot test names no appliance, because the host of the test does not know odoo" {
-    run ! grep -q '^appliance:' tests/instance.yaml
+@test "the spec of the boot test names odoo in the simple mode, and keel reads the manifest from the rootfs" {
+    # with no mode the Mode screen stays a question for keel-init and the
+    # init fence stays up (confconsole 2.2.3+keel28); the host of the test
+    # does not know odoo, so keel spec apply needs --root
+    grep -qx '  name: odoo' tests/instance.yaml
+    grep -qx '  mode: simple' tests/instance.yaml
+    grep -q 'keel spec apply .*--root "$BT_ROOTFS"' tests/boot-test.sh
 }
 
 @test "no Apache anywhere in the layer" {

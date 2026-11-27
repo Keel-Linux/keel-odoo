@@ -80,7 +80,9 @@ for target in $(bt_spec_targets "$BT_ROOTFS"); do
     install -D -m 0600 "$BT_SPEC" "$target"
 done
 bt_spec_in_rootfs "$BT_SPEC" "$BT_ROOTFS" > "$container_dir/instance-host.yaml"
-keel spec apply --spec "$container_dir/instance-host.yaml" \
+# --root: the spec names the appliance, and the host does not hold its
+# manifest. The layer ships it, so keel reads it from the assembled rootfs.
+keel spec apply --spec "$container_dir/instance-host.yaml" --root "$BT_ROOTFS" \
     --conf "$BT_ROOTFS/etc/inithooks.conf" --non-interactive
 
 # The declared password, as the description names it. Everything below
@@ -141,12 +143,16 @@ bt_db_verdict "$answer"
 status=$(lxc attach -- dpkg-query -W -f '${Status}' "$BT_WEBMIN_MODULE" 2>/dev/null || true)
 bt_module_verdict "$BT_WEBMIN_MODULE" "$status"
 code=""
+# Asked on the loopback of the machine, not from outside: Webmin answers
+# only on the access network of the administrators (decision 0098,
+# keel-core 0.1.5), so the firewall of a node with a mode drops 12321 from
+# the host of the test, and a curl from outside waits for ever.
 webmin_answers() {
-    code=$(curl -6 -k -s -o /dev/null -w '%{http_code}' \
-        "https://[$addr]:$BT_WEBMIN_PORT/" || true)
+    code=$(lxc attach -- curl -k -s --max-time 10 -o /dev/null -w '%{http_code}' \
+        "https://127.0.0.1:$BT_WEBMIN_PORT/" 2>/dev/null || true)
     [ "$code" = 200 ] || [ "$code" = 401 ]
 }
-bt_wait_for "$BT_TIMEOUT" "$BT_INTERVAL" "webmin on https://[$addr]:$BT_WEBMIN_PORT/" \
+bt_wait_for "$BT_TIMEOUT" "$BT_INTERVAL" "webmin on https://127.0.0.1:$BT_WEBMIN_PORT/ of the machine" \
     webmin_answers
 bt_webmin_verdict "$code"
 
